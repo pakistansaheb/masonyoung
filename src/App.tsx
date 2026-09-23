@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Phone, Ruler, FileText, Settings } from 'lucide-react'
-import logo from './assets/mason-young-logo.jpg'
+import { MASON_YOUNG_LOGO_BASE64 } from './assets/logoBase64'
 import PropertyReports from './components/PropertyReports/PropertyReports'
 
 type Tab = 'enquiries' | 'floorplans' | 'reports'
@@ -30,7 +30,7 @@ export default function App() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
-            <img src={logo} alt="Mason Young" className="h-9 w-auto" />
+            <img src={MASON_YOUNG_LOGO_BASE64} alt="Mason Young" className="h-9 w-auto" />
             <span className="text-sm text-gray-500 hidden sm:inline">Admin Portal</span>
           </div>
           <button className="text-gray-400 hover:text-gray-600" aria-label="Settings">

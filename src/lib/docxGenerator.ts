@@ -39,13 +39,16 @@ import {
   servicesParagraph,
   measurementsParagraph,
 } from './reportText'
-import logoUrl from '../assets/mason-young-logo.jpg'
+import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
 
 const RED = 'C8102E'
 
-async function fetchBytes(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url)
-  return res.arrayBuffer()
+function base64ToBytes(dataUri: string): Uint8Array {
+  const base64 = dataUri.split(',')[1]
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }
 
 function bodyText(text: string): Paragraph[] {
@@ -97,7 +100,7 @@ function marketingTable(): Table {
 }
 
 export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; filename: string }> {
-  const logoBytes = await fetchBytes(logoUrl)
+  const logoBytes = base64ToBytes(MASON_YOUNG_LOGO_BASE64)
 
   const isLong = d.formLength === 'long'
 
