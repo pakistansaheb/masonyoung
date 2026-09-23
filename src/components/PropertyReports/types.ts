@@ -45,6 +45,7 @@ export interface ReportData {
   firstFloorSqFt: string
   otherFloorSqFt: string
   totalSqFt: string
+  totalSqM: string
   measurementBasis: 'net internal' | 'gross internal'
 }
 
@@ -82,5 +83,6 @@ export const BLANK_REPORT: ReportData = {
   firstFloorSqFt: '',
   otherFloorSqFt: '',
   totalSqFt: '',
+  totalSqM: '',
   measurementBasis: 'net internal',
 }

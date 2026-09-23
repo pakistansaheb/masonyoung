@@ -79,11 +79,24 @@ export function servicesParagraph(d: ReportData): string {
   return `We are advised all services are connected to include ${d.servicesNotes}.`
 }
 
+function withCommas(value: string): string {
+  const n = Number(value.replace(/,/g, ''))
+  return Number.isFinite(n) ? n.toLocaleString('en-GB') : value
+}
+
 export function measurementsParagraph(d: ReportData): string {
   const parts: string[] = []
-  if (d.groundFloorSqFt) parts.push(`the ground floor measures approximately ${d.groundFloorSqFt} sq ft`)
-  if (d.firstFloorSqFt) parts.push(`the first floor measures approximately ${d.firstFloorSqFt} sq ft`)
-  if (d.otherFloorSqFt) parts.push(`there is a further ${d.otherFloorSqFt} sq ft`)
-  const detail = parts.length ? `From measurements taken on site, we have calculated that ${parts.join(', ')}, providing a total of approximately ${d.totalSqFt || '[TOTAL]'} sq ft. ` : ''
+  if (d.groundFloorSqFt) parts.push(`the ground floor measures approximately ${withCommas(d.groundFloorSqFt)} sq ft`)
+  if (d.firstFloorSqFt) parts.push(`the first floor measures approximately ${withCommas(d.firstFloorSqFt)} sq ft`)
+  if (d.otherFloorSqFt) parts.push(`there is a further ${withCommas(d.otherFloorSqFt)} sq ft`)
+
+  const total = d.totalSqFt ? `${withCommas(d.totalSqFt)} sq ft` : '[TOTAL]'
+  const totalWithSqm = d.totalSqM ? `${total} (${withCommas(d.totalSqM)} sq m)` : total
+
+  const detail = parts.length
+    ? `From measurements taken on site, we have calculated that ${parts.join(', ')}, providing a total of approximately ${totalWithSqm}. `
+    : d.totalSqFt
+      ? `From measurements taken on site, the property provides a total of approximately ${totalWithSqm}. `
+      : ''
   return `${detail}All measurements were calculated on a ${d.measurementBasis} area basis.`
 }

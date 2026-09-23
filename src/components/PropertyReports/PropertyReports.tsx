@@ -6,7 +6,7 @@ import { BLANK_REPORT, type ReportData, type DisposalType, type FormLength } fro
 import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
-import { extractTotalSqFt } from '../../lib/areaExtract'
+import { extractAreaTotals } from '../../lib/areaExtract'
 import { isSpreadsheetFile, extractFloorSchedule } from '../../lib/spreadsheet'
 
 const REPORT_TYPE_OPTIONS: {
@@ -85,6 +85,7 @@ export default function PropertyReports() {
       firstFloorSqFt: BLANK_REPORT.firstFloorSqFt,
       otherFloorSqFt: BLANK_REPORT.otherFloorSqFt,
       totalSqFt: BLANK_REPORT.totalSqFt,
+      totalSqM: BLANK_REPORT.totalSqM,
       tenureNotes: BLANK_REPORT.tenureNotes,
     }))
   }
@@ -137,13 +138,17 @@ export default function PropertyReports() {
 
       // A spreadsheet's own Grand Total row is exact; only fall back to
       // pattern-matching sq ft/sq m mentions in OCR'd photo text.
-      const scheduleTotal = schedules.map(s => s.totalSqFt).find(t => t !== null) ?? null
-      const sqFt = scheduleTotal ?? extractTotalSqFt(ocrText)
+      const scheduleSqFt = schedules.map(s => s.totalSqFt).find(t => t !== null) ?? null
+      const scheduleSqM = schedules.map(s => s.totalSqM).find(t => t !== null) ?? null
+      const ocrTotals = extractAreaTotals(ocrText)
+      const sqFt = scheduleSqFt ?? ocrTotals.totalSqFt
+      const sqM = scheduleSqM ?? ocrTotals.totalSqM
 
       setData(prev => ({
         ...prev,
         floorPlanNotes: combinedNotes,
         totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
+        totalSqM: sqM !== null ? String(sqM) : prev.totalSqM,
       }))
 
       // Immediately draft the descriptions from what was just read off the
@@ -341,7 +346,8 @@ export default function PropertyReports() {
             <div className="grid sm:grid-cols-2 gap-x-4 mt-2">
               <TextField label="Ground floor (sq ft)" value={data.groundFloorSqFt} onChange={v => set('groundFloorSqFt', v)} />
               <TextField label="First floor (sq ft)" value={data.firstFloorSqFt} onChange={v => set('firstFloorSqFt', v)} />
-              <TextField label="Other / total (sq ft)" value={data.totalSqFt} onChange={v => set('totalSqFt', v)} />
+              <TextField label="Total (sq ft)" value={data.totalSqFt} onChange={v => set('totalSqFt', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="Total (sq m)" value={data.totalSqM} onChange={v => set('totalSqM', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
             </div>
             <TextField label="Services connected" value={data.servicesNotes} onChange={v => set('servicesNotes', v)} />
             <TextAreaField label="Condition notes" value={data.conditionNotes} onChange={v => set('conditionNotes', v)} rows={2} />
