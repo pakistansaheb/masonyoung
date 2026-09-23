@@ -7,6 +7,7 @@ import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
 import { extractTotalSqFt } from '../../lib/areaExtract'
+import { isSpreadsheetFile, extractSpreadsheetText } from '../../lib/spreadsheet'
 
 const REPORT_TYPE_OPTIONS: {
   key: string
@@ -116,13 +117,17 @@ export default function PropertyReports() {
     setData(prev => ({ ...prev, attachmentNames: [...prev.attachmentNames, ...names] }))
 
     const imageFiles = fileArr.filter(f => f.type.startsWith('image/'))
-    if (imageFiles.length === 0) return
+    const spreadsheetFiles = fileArr.filter(isSpreadsheetFile)
+    if (imageFiles.length === 0 && spreadsheetFiles.length === 0) return
 
     setOcrError('')
     setOcrRunning(true)
     try {
-      const texts = await Promise.all(imageFiles.map(f => ocrFloorPlan(f)))
-      const extracted = texts.filter(t => t.trim()).join('\n')
+      const [ocrTexts, sheetTexts] = await Promise.all([
+        Promise.all(imageFiles.map(f => ocrFloorPlan(f))),
+        Promise.all(spreadsheetFiles.map(f => extractSpreadsheetText(f))),
+      ])
+      const extracted = [...ocrTexts, ...sheetTexts].filter(t => t.trim()).join('\n')
       if (!extracted) return
 
       const combinedNotes = data.floorPlanNotes ? `${data.floorPlanNotes}\n${extracted}` : extracted
@@ -138,7 +143,7 @@ export default function PropertyReports() {
       // floor plan, rather than waiting for a separate manual click.
       await runGenerate(data.address, combinedNotes)
     } catch (err) {
-      setOcrError(err instanceof Error ? err.message : 'Could not read text from the photo — add notes manually below.')
+      setOcrError(err instanceof Error ? err.message : 'Could not read the attachment — add notes manually below.')
     } finally {
       setOcrRunning(false)
     }
