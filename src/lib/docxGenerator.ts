@@ -232,7 +232,12 @@ function letterheadAddressImage(): Paragraph {
   const widthPt = ADDRESS_BLOCK_WIDTH_PT
   const heightPt = ADDRESS_BLOCK_HEIGHT_PT
   const horizontalOffsetEmu = letterheadColumnLeftOffsetEmu()
-  const verticalOffsetEmu = LOGO_HEIGHT_PT * 12700 + 6985 // starts right below the logo
+  // Starts right below the logo. The naive "logo height + tiny nudge"
+  // offset rendered a much bigger gap than the exemplar (measured: ours
+  // ~69% of the logo's own height, exemplar's ~16%) — the second header
+  // paragraph's own nominal line height adds to this offset, so it's
+  // pulled back up to compensate and match the exemplar's tight spacing.
+  const verticalOffsetEmu = (LOGO_HEIGHT_PT - 25) * 12700 + 6985
 
   return new Paragraph({
     children: [
