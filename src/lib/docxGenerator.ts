@@ -30,6 +30,7 @@ import {
   CONCLUSION,
   MARKETING_COSTS_ROWS,
   MARKETING_INTRO,
+  MARKETING_MID,
   MARKETING_OUTRO,
 } from './letterBoilerplate'
 import {
@@ -350,7 +351,7 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
 
     bodySections.push(heading('Marketing'), blank(), ...bodyText(MARKETING_INTRO), blank())
     bodySections.push(marketingTable())
-    bodySections.push(blank(), ...bodyText(MARKETING_OUTRO), blank())
+    bodySections.push(blank(), ...bodyText(MARKETING_MID), blank(), ...bodyText(MARKETING_OUTRO), blank())
   } else {
     bodySections.push(...bodyText(shortFormSummary(d)), blank())
     bodySections.push(...bodyText(RICS_DISCLAIMER), blank())
