@@ -84,11 +84,21 @@ function withCommas(value: string): string {
   return Number.isFinite(n) ? n.toLocaleString('en-GB') : value
 }
 
+function floorPart(label: string, sqFt: string, sqM: string): string | null {
+  if (!sqFt) return null
+  const sqm = sqM ? ` (${withCommas(sqM)} sq m)` : ''
+  return `${label} measures approximately ${withCommas(sqFt)} sq ft${sqm}`
+}
+
 export function measurementsParagraph(d: ReportData): string {
-  const parts: string[] = []
-  if (d.groundFloorSqFt) parts.push(`the ground floor measures approximately ${withCommas(d.groundFloorSqFt)} sq ft`)
-  if (d.firstFloorSqFt) parts.push(`the first floor measures approximately ${withCommas(d.firstFloorSqFt)} sq ft`)
-  if (d.otherFloorSqFt) parts.push(`there is a further ${withCommas(d.otherFloorSqFt)} sq ft`)
+  const parts = [
+    floorPart('the ground floor', d.groundFloorSqFt, d.groundFloorSqM),
+    floorPart('the first floor', d.firstFloorSqFt, d.firstFloorSqM),
+    floorPart('the second floor', d.secondFloorSqFt, d.secondFloorSqM),
+    d.otherFloorSqFt
+      ? `there is a further ${withCommas(d.otherFloorSqFt)} sq ft${d.otherFloorSqM ? ` (${withCommas(d.otherFloorSqM)} sq m)` : ''}`
+      : null,
+  ].filter((p): p is string => p !== null)
 
   const total = d.totalSqFt ? `${withCommas(d.totalSqFt)} sq ft` : '[TOTAL]'
   const totalWithSqm = d.totalSqM ? `${total} (${withCommas(d.totalSqM)} sq m)` : total

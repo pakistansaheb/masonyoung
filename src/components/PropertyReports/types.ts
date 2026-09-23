@@ -42,8 +42,13 @@ export interface ReportData {
   conditionNotes: string
 
   groundFloorSqFt: string
+  groundFloorSqM: string
   firstFloorSqFt: string
+  firstFloorSqM: string
+  secondFloorSqFt: string
+  secondFloorSqM: string
   otherFloorSqFt: string
+  otherFloorSqM: string
   totalSqFt: string
   totalSqM: string
   measurementBasis: 'net internal' | 'gross internal'
@@ -80,8 +85,13 @@ export const BLANK_REPORT: ReportData = {
   conditionNotes:
     'the condition of the building is reasonable for its age and use. No doubt any potential occupier will carry out their own investigation as to the condition and whether any remedial work is required for their own purposes',
   groundFloorSqFt: '',
+  groundFloorSqM: '',
   firstFloorSqFt: '',
+  firstFloorSqM: '',
+  secondFloorSqFt: '',
+  secondFloorSqM: '',
   otherFloorSqFt: '',
+  otherFloorSqM: '',
   totalSqFt: '',
   totalSqM: '',
   measurementBasis: 'net internal',

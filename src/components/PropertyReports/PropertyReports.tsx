@@ -7,7 +7,7 @@ import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
 import { extractAreaTotals } from '../../lib/areaExtract'
-import { isSpreadsheetFile, extractFloorSchedule } from '../../lib/spreadsheet'
+import { isSpreadsheetFile, extractFloorSchedule, type FloorArea } from '../../lib/spreadsheet'
 
 const REPORT_TYPE_OPTIONS: {
   key: string
@@ -82,8 +82,13 @@ export default function PropertyReports() {
       managedServiceLettingFeePercent: BLANK_REPORT.managedServiceLettingFeePercent,
       managementFeePercent: BLANK_REPORT.managementFeePercent,
       groundFloorSqFt: BLANK_REPORT.groundFloorSqFt,
+      groundFloorSqM: BLANK_REPORT.groundFloorSqM,
       firstFloorSqFt: BLANK_REPORT.firstFloorSqFt,
+      firstFloorSqM: BLANK_REPORT.firstFloorSqM,
+      secondFloorSqFt: BLANK_REPORT.secondFloorSqFt,
+      secondFloorSqM: BLANK_REPORT.secondFloorSqM,
       otherFloorSqFt: BLANK_REPORT.otherFloorSqFt,
+      otherFloorSqM: BLANK_REPORT.otherFloorSqM,
       totalSqFt: BLANK_REPORT.totalSqFt,
       totalSqM: BLANK_REPORT.totalSqM,
       tenureNotes: BLANK_REPORT.tenureNotes,
@@ -144,11 +149,32 @@ export default function PropertyReports() {
       const sqFt = scheduleSqFt ?? ocrTotals.totalSqFt
       const sqM = scheduleSqM ?? ocrTotals.totalSqM
 
+      // Merge each floor's Sub-Total figures across all attached
+      // spreadsheets (first file to report a given floor wins).
+      const floors: Record<string, FloorArea> = {}
+      for (const s of schedules) {
+        for (const [label, area] of Object.entries(s.floors)) {
+          if (!floors[label]) floors[label] = area
+        }
+      }
+      const knownFloors = new Set(['Ground Floor', 'First Floor', 'Second Floor'])
+      const otherFloors = Object.entries(floors).filter(([label]) => !knownFloors.has(label))
+      const otherSqFt = otherFloors.reduce((sum, [, a]) => (a.sqFt !== null ? sum + a.sqFt : sum), 0)
+      const otherSqM = otherFloors.reduce((sum, [, a]) => (a.sqM !== null ? sum + a.sqM : sum), 0)
+
       setData(prev => ({
         ...prev,
         floorPlanNotes: combinedNotes,
         totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
         totalSqM: sqM !== null ? String(sqM) : prev.totalSqM,
+        groundFloorSqFt: floors['Ground Floor']?.sqFt != null ? String(floors['Ground Floor'].sqFt) : prev.groundFloorSqFt,
+        groundFloorSqM: floors['Ground Floor']?.sqM != null ? String(floors['Ground Floor'].sqM) : prev.groundFloorSqM,
+        firstFloorSqFt: floors['First Floor']?.sqFt != null ? String(floors['First Floor'].sqFt) : prev.firstFloorSqFt,
+        firstFloorSqM: floors['First Floor']?.sqM != null ? String(floors['First Floor'].sqM) : prev.firstFloorSqM,
+        secondFloorSqFt: floors['Second Floor']?.sqFt != null ? String(floors['Second Floor'].sqFt) : prev.secondFloorSqFt,
+        secondFloorSqM: floors['Second Floor']?.sqM != null ? String(floors['Second Floor'].sqM) : prev.secondFloorSqM,
+        otherFloorSqFt: otherSqFt ? String(otherSqFt) : prev.otherFloorSqFt,
+        otherFloorSqM: otherSqM ? String(otherSqM) : prev.otherFloorSqM,
       }))
 
       // Immediately draft the descriptions from what was just read off the
@@ -344,8 +370,14 @@ export default function PropertyReports() {
         {isLong && (
           <>
             <div className="grid sm:grid-cols-2 gap-x-4 mt-2">
-              <TextField label="Ground floor (sq ft)" value={data.groundFloorSqFt} onChange={v => set('groundFloorSqFt', v)} />
-              <TextField label="First floor (sq ft)" value={data.firstFloorSqFt} onChange={v => set('firstFloorSqFt', v)} />
+              <TextField label="Ground floor (sq ft)" value={data.groundFloorSqFt} onChange={v => set('groundFloorSqFt', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="Ground floor (sq m)" value={data.groundFloorSqM} onChange={v => set('groundFloorSqM', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="First floor (sq ft)" value={data.firstFloorSqFt} onChange={v => set('firstFloorSqFt', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="First floor (sq m)" value={data.firstFloorSqM} onChange={v => set('firstFloorSqM', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="Second floor (sq ft)" value={data.secondFloorSqFt} onChange={v => set('secondFloorSqFt', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="Second floor (sq m)" value={data.secondFloorSqM} onChange={v => set('secondFloorSqM', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
+              <TextField label="Other floor(s) (sq ft)" value={data.otherFloorSqFt} onChange={v => set('otherFloorSqFt', v)} hint="Any floors beyond ground/first/second — auto-filled where possible." />
+              <TextField label="Other floor(s) (sq m)" value={data.otherFloorSqM} onChange={v => set('otherFloorSqM', v)} hint="Any floors beyond ground/first/second — auto-filled where possible." />
               <TextField label="Total (sq ft)" value={data.totalSqFt} onChange={v => set('totalSqFt', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
               <TextField label="Total (sq m)" value={data.totalSqM} onChange={v => set('totalSqM', v)} hint="Auto-filled from an attached floor plan/spreadsheet." />
             </div>
