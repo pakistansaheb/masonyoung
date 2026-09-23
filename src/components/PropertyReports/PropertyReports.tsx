@@ -7,7 +7,7 @@ import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
 import { extractTotalSqFt } from '../../lib/areaExtract'
-import { isSpreadsheetFile, extractSpreadsheetText } from '../../lib/spreadsheet'
+import { isSpreadsheetFile, extractFloorSchedule } from '../../lib/spreadsheet'
 
 const REPORT_TYPE_OPTIONS: {
   key: string
@@ -123,15 +123,22 @@ export default function PropertyReports() {
     setOcrError('')
     setOcrRunning(true)
     try {
-      const [ocrTexts, sheetTexts] = await Promise.all([
+      const [ocrTexts, schedules] = await Promise.all([
         Promise.all(imageFiles.map(f => ocrFloorPlan(f))),
-        Promise.all(spreadsheetFiles.map(f => extractSpreadsheetText(f))),
+        Promise.all(spreadsheetFiles.map(f => extractFloorSchedule(f))),
       ])
-      const extracted = [...ocrTexts, ...sheetTexts].filter(t => t.trim()).join('\n')
+
+      const ocrText = ocrTexts.filter(t => t.trim()).join('\n')
+      const scheduleNotes = schedules.map(s => s.notes).filter(t => t.trim()).join('\n')
+      const extracted = [ocrText, scheduleNotes].filter(Boolean).join('\n')
       if (!extracted) return
 
       const combinedNotes = data.floorPlanNotes ? `${data.floorPlanNotes}\n${extracted}` : extracted
-      const sqFt = extractTotalSqFt(extracted)
+
+      // A spreadsheet's own Grand Total row is exact; only fall back to
+      // pattern-matching sq ft/sq m mentions in OCR'd photo text.
+      const scheduleTotal = schedules.map(s => s.totalSqFt).find(t => t !== null) ?? null
+      const sqFt = scheduleTotal ?? extractTotalSqFt(ocrText)
 
       setData(prev => ({
         ...prev,
