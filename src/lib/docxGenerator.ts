@@ -16,7 +16,6 @@ import {
   VerticalPositionRelativeFrom,
   TextWrappingType,
   DocumentGridType,
-  HeightRule,
 } from 'docx'
 import { saveAs } from 'file-saver'
 import type { ReportData } from '../components/PropertyReports/types'
@@ -158,12 +157,26 @@ function section(title: string, ...bodies: string[]): Paragraph[] {
   return out
 }
 
-const TABLE_ROW_HEIGHT_TWIPS = 320
+// Exact values from the real letterhead's table XML: total width 6269
+// twips split 5519/750 between the two columns (not an even 50/50 —
+// "Description" needs the room, "Cost" doesn't), centered on the page,
+// 1pt solid black borders, zero top/bottom cell padding (which is why real
+// rows read as compact — no explicit row height needed, it's just
+// single-line content with no padding to inflate it).
+const TABLE_WIDTH_DXA = 6269
+const TABLE_COL1_DXA = 5519
+const TABLE_COL2_DXA = 750
+const TABLE_CELL_MARGINS = { top: 0, bottom: 0, left: 108, right: 108, marginUnitType: WidthType.DXA }
 
 function marketingTable(): Table {
-  const darkBorder = { style: BorderStyle.SINGLE, size: 6, color: '000000' }
+  const darkBorder = { style: BorderStyle.SINGLE, size: 8, color: '000000' }
+  const col1 = { size: TABLE_COL1_DXA, type: WidthType.DXA }
+  const col2 = { size: TABLE_COL2_DXA, type: WidthType.DXA }
   return new Table({
-    width: { size: 55, type: WidthType.PERCENTAGE },
+    width: { size: TABLE_WIDTH_DXA, type: WidthType.DXA },
+    alignment: AlignmentType.CENTER,
+    columnWidths: [TABLE_COL1_DXA, TABLE_COL2_DXA],
+    margins: TABLE_CELL_MARGINS,
     borders: {
       top: darkBorder,
       bottom: darkBorder,
@@ -174,19 +187,17 @@ function marketingTable(): Table {
     },
     rows: [
       new TableRow({
-        height: { value: TABLE_ROW_HEIGHT_TWIPS, rule: HeightRule.ATLEAST },
         children: [
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Description', bold: true, font: FONT, size: SIZE })] })] }),
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true, font: FONT, size: SIZE })] })] }),
+          new TableCell({ width: col1, children: [new Paragraph({ children: [new TextRun({ text: 'Description', bold: true, font: FONT, size: SIZE })] })] }),
+          new TableCell({ width: col2, children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true, font: FONT, size: SIZE })] })] }),
         ],
       }),
       ...MARKETING_COSTS_ROWS.map(
         ([desc, cost]) =>
           new TableRow({
-            height: { value: TABLE_ROW_HEIGHT_TWIPS, rule: HeightRule.ATLEAST },
             children: [
-              new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: desc, font: FONT, size: SIZE })] })] }),
-              new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cost, font: FONT, size: SIZE })] })] }),
+              new TableCell({ width: col1, children: [new Paragraph({ children: [new TextRun({ text: desc, font: FONT, size: SIZE })] })] }),
+              new TableCell({ width: col2, children: [new Paragraph({ children: [new TextRun({ text: cost, font: FONT, size: SIZE })] })] }),
             ],
           })
       ),
@@ -325,7 +336,7 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
     bodySections.push(...section('Condition of the premises', conditionParagraph(d)))
     bodySections.push(...section('Quoting Terms & Fees', quotingTermsParagraph(d), RICS_DISCLAIMER))
 
-    bodySections.push(heading('Marketing Costs'), blank(), ...bodyText(MARKETING_INTRO), blank())
+    bodySections.push(heading('Marketing'), blank(), ...bodyText(MARKETING_INTRO), blank())
     bodySections.push(marketingTable())
     bodySections.push(blank(), ...bodyText(MARKETING_OUTRO), blank())
   } else {
