@@ -1,6 +1,8 @@
 // Reads text off an attached floor plan photo/scan using OCR.space,
 // so surveyor's notes on the image get pulled into the app automatically.
 
+export const maxDuration = 30
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })

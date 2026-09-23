@@ -6,6 +6,7 @@ import { BLANK_REPORT, type ReportData, type DisposalType, type FormLength } fro
 import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
+import { extractTotalSqFt } from '../../lib/areaExtract'
 
 const REPORT_TYPE_OPTIONS: {
   key: string
@@ -87,6 +88,27 @@ export default function PropertyReports() {
     }))
   }
 
+  async function runGenerate(address: string, notes: string) {
+    if (!address.trim()) {
+      setAiError('Enter the property address first (Step 2).')
+      return
+    }
+    setAiError('')
+    setGenerating(true)
+    try {
+      const { location, property } = await generateDescriptions(address, notes)
+      setData(prev => ({ ...prev, locationDescription: location, propertyDescription: property }))
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Failed to generate descriptions')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  function handleGenerateDescriptions() {
+    return runGenerate(data.address, data.floorPlanNotes)
+  }
+
   async function onFilesChosen(files: FileList | null) {
     if (!files || files.length === 0) return
     const fileArr = Array.from(files)
@@ -101,33 +123,24 @@ export default function PropertyReports() {
     try {
       const texts = await Promise.all(imageFiles.map(f => ocrFloorPlan(f)))
       const extracted = texts.filter(t => t.trim()).join('\n')
-      if (extracted) {
-        setData(prev => ({
-          ...prev,
-          floorPlanNotes: prev.floorPlanNotes ? `${prev.floorPlanNotes}\n${extracted}` : extracted,
-        }))
-      }
+      if (!extracted) return
+
+      const combinedNotes = data.floorPlanNotes ? `${data.floorPlanNotes}\n${extracted}` : extracted
+      const sqFt = extractTotalSqFt(extracted)
+
+      setData(prev => ({
+        ...prev,
+        floorPlanNotes: combinedNotes,
+        totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
+      }))
+
+      // Immediately draft the descriptions from what was just read off the
+      // floor plan, rather than waiting for a separate manual click.
+      await runGenerate(data.address, combinedNotes)
     } catch (err) {
       setOcrError(err instanceof Error ? err.message : 'Could not read text from the photo — add notes manually below.')
     } finally {
       setOcrRunning(false)
-    }
-  }
-
-  async function handleGenerateDescriptions() {
-    if (!data.address.trim()) {
-      setAiError('Enter the property address first (Step 2).')
-      return
-    }
-    setAiError('')
-    setGenerating(true)
-    try {
-      const { location, property } = await generateDescriptions(data.address, data.floorPlanNotes)
-      setData(prev => ({ ...prev, locationDescription: location, propertyDescription: property }))
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : 'Failed to generate descriptions')
-    } finally {
-      setGenerating(false)
     }
   }
 

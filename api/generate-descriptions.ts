@@ -61,6 +61,11 @@ async function callMistral(system: string, userMessage: string, apiKey: string):
   return json.choices[0]?.message?.content?.trim() ?? ''
 }
 
+// Vercel's default function execution limit (10s on Hobby) is shorter than
+// our 20s per-call Mistral timeout, which was silently killing the request
+// before Mistral could respond. This raises the ceiling explicitly.
+export const maxDuration = 30
+
 export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
