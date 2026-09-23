@@ -7,6 +7,7 @@ export interface ReportData {
   formLength: FormLength
 
   // Step 2
+  clientName: string // full name, e.g. "Graham Clough" — used in the recipient address block
   clientSalutation: string // e.g. "Dear James" or "Dear Mr Lacey"
   address: string // full multi-line address, as it should appear in the Re: line and letter address block
   postTown: string
@@ -49,6 +50,7 @@ export interface ReportData {
 export const BLANK_REPORT: ReportData = {
   disposalType: 'freehold',
   formLength: 'long',
+  clientName: '',
   clientSalutation: '',
   address: '',
   postTown: '',

@@ -212,6 +212,13 @@ export default function PropertyReports() {
 
       <StepCard number={2} title="Property & Client">
         <TextField
+          label="Client full name"
+          value={data.clientName}
+          onChange={v => set('clientName', v)}
+          placeholder="Graham Clough"
+          hint="Used in the recipient address block at the top of the letter."
+        />
+        <TextField
           label="Client salutation"
           value={data.clientSalutation}
           onChange={v => set('clientSalutation', v)}

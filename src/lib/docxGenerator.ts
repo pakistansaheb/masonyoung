@@ -42,6 +42,29 @@ import {
 import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
 
 const RED = 'C8102E'
+const FONT = 'Arial'
+const SIZE = 20 // half-points; 20 = 10pt
+
+function ordinalSuffix(day: number): string {
+  if (day >= 11 && day <= 13) return 'th'
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
+}
+
+function formatDateWithOrdinal(date: Date): string {
+  const day = date.getDate()
+  const month = date.toLocaleDateString('en-GB', { month: 'long' })
+  const year = date.getFullYear()
+  return `${day}${ordinalSuffix(day)} ${month} ${year}`
+}
 
 function base64ToBytes(dataUri: string): Uint8Array {
   const base64 = dataUri.split(',')[1]
@@ -56,7 +79,7 @@ function bodyText(text: string): Paragraph[] {
     line =>
       new Paragraph({
         spacing: { after: 200 },
-        children: [new TextRun({ text: line, size: 22 })],
+        children: [new TextRun({ text: line, font: FONT, size: SIZE })],
       })
   )
 }
@@ -64,7 +87,7 @@ function bodyText(text: string): Paragraph[] {
 function heading(text: string): Paragraph {
   return new Paragraph({
     spacing: { before: 200, after: 100 },
-    children: [new TextRun({ text, bold: true, underline: {}, size: 22 })],
+    children: [new TextRun({ text, bold: true, underline: {}, font: FONT, size: SIZE })],
   })
 }
 
@@ -82,21 +105,25 @@ function marketingTable(): Table {
     rows: [
       new TableRow({
         children: [
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Description', bold: true })] })] }),
-          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true })] })] }),
+          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Description', bold: true, font: FONT, size: SIZE })] })] }),
+          new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true, font: FONT, size: SIZE })] })] }),
         ],
       }),
       ...MARKETING_COSTS_ROWS.map(
         ([desc, cost]) =>
           new TableRow({
             children: [
-              new TableCell({ children: [new Paragraph(desc)] }),
-              new TableCell({ children: [new Paragraph(cost)] }),
+              new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: desc, font: FONT, size: SIZE })] })] }),
+              new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cost, font: FONT, size: SIZE })] })] }),
             ],
           })
       ),
     ],
   })
+}
+
+function plainRun(text: string): Paragraph {
+  return new Paragraph({ children: [new TextRun({ text, font: FONT, size: SIZE })], spacing: { after: 0 } })
 }
 
 export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; filename: string }> {
@@ -106,12 +133,22 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
 
   const bodySections: (Paragraph | Table)[] = []
 
+  // Date, then the recipient's name and address, matching Mason Young's
+  // standard letter opening — the app previously skipped straight to the
+  // salutation with no date or address block above it.
+  bodySections.push(new Paragraph({ children: [new TextRun({ text: formatDateWithOrdinal(new Date()), font: FONT, size: SIZE })], spacing: { after: 400 } }))
+  if (d.clientName.trim()) bodySections.push(plainRun(d.clientName.trim()))
+  for (const line of d.address.split(',').map(l => l.trim()).filter(Boolean)) {
+    bodySections.push(plainRun(line))
+  }
+  bodySections.push(new Paragraph({ text: '', spacing: { after: 300 } }))
+
   bodySections.push(
-    new Paragraph({ children: [new TextRun({ text: d.clientSalutation || 'Dear Sir/Madam', size: 22 })], spacing: { after: 300 } })
+    new Paragraph({ children: [new TextRun({ text: d.clientSalutation || 'Dear Sir/Madam', font: FONT, size: SIZE })], spacing: { after: 300 } })
   )
   bodySections.push(
     new Paragraph({
-      children: [new TextRun({ text: reLine(d), bold: true, underline: {}, size: 22 })],
+      children: [new TextRun({ text: reLine(d), bold: true, underline: {}, font: FONT, size: SIZE })],
       spacing: { after: 300 },
     })
   )
@@ -182,6 +219,13 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   )
 
   const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: SIZE },
+        },
+      },
+    },
     sections: [
       {
         headers: {
@@ -206,7 +250,7 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
               new Paragraph({
                 border: { top: { style: BorderStyle.SINGLE, size: 4, color: RED } },
                 spacing: { before: 100 },
-                children: [new TextRun({ text: LETTERHEAD.regLine, size: 12, color: '888888' })],
+                children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
               }),
             ],
           }),
