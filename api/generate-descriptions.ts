@@ -36,7 +36,11 @@ Rules, strictly followed:
 Example of the exact tone and structure required:
 "The property comprises of an end terrace two storey building of brick built construction surmounted by a pitched tiled roof. Internally, the ground floor premises benefit from solid floor with tiled covering, part plastered and painted and part tiled walls, suspended ceiling with LED lights, fluorescent strip lights, stainless steel kitchen, extraction canopy and WC facilities. Externally, the property benefits from an electric metal roller shutter."`
 
-async function callMistral(system: string, userMessage: string, apiKey: string): Promise<string> {
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function callMistral(system: string, userMessage: string, apiKey: string, retriesLeft = 2): Promise<string> {
   const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -53,6 +57,13 @@ async function callMistral(system: string, userMessage: string, apiKey: string):
     }),
     signal: AbortSignal.timeout(20000),
   })
+
+  if (res.status === 429 && retriesLeft > 0) {
+    // Free tier is rate-limited to roughly one request at a time — wait it
+    // out and try again rather than failing immediately.
+    await sleep(3000)
+    return callMistral(system, userMessage, apiKey, retriesLeft - 1)
+  }
 
   if (!res.ok) {
     const text = await res.text()
@@ -95,14 +106,14 @@ export default async function handler(req: IncomingMessage & { body?: unknown },
   }
 
   try {
-    const [location, property] = await Promise.all([
-      callMistral(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey),
-      callMistral(
-        PROPERTY_SYSTEM,
-        `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes?.trim() || '(no notes provided — use only general, non-specific phrasing and leave fixture details generic)'}`,
-        apiKey
-      ),
-    ])
+    // Run one after the other, not in parallel — Mistral's free tier only
+    // allows roughly one request at a time and rejects concurrent ones.
+    const location = await callMistral(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey)
+    const property = await callMistral(
+      PROPERTY_SYSTEM,
+      `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes?.trim() || '(no notes provided — use only general, non-specific phrasing and leave fixture details generic)'}`,
+      apiKey
+    )
 
     send(res, 200, { location, property })
   } catch (err) {
