@@ -59,9 +59,13 @@ async function callMistral(system: string, userMessage: string, apiKey: string, 
   })
 
   if (res.status === 429 && retriesLeft > 0) {
-    // Free tier is rate-limited to roughly one request at a time — wait it
-    // out and try again rather than failing immediately.
-    await sleep(3000)
+    // Honor Mistral's own Retry-After if it sends one; otherwise back off
+    // longer each attempt — the free tier's real limit seems to be a
+    // per-minute cap, not per-second, so a few seconds isn't always enough.
+    const retryAfterHeader = res.headers.get('retry-after')
+    const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN
+    const waitMs = Number.isFinite(retryAfterMs) ? retryAfterMs : (3 - retriesLeft) * 5000
+    await sleep(waitMs)
     return callMistral(system, userMessage, apiKey, retriesLeft - 1)
   }
 
@@ -76,8 +80,9 @@ async function callMistral(system: string, userMessage: string, apiKey: string, 
 
 // Vercel's default function execution limit (10s on Hobby) is shorter than
 // our 20s per-call Mistral timeout, which was silently killing the request
-// before Mistral could respond. This raises the ceiling explicitly.
-export const maxDuration = 30
+// before Mistral could respond. Raised further to give 429 retry backoff
+// room across two sequential calls.
+export const maxDuration = 60
 
 function send(res: ServerResponse, status: number, body: object) {
   res.statusCode = status
