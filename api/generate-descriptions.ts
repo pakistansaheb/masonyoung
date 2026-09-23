@@ -49,7 +49,10 @@ async function callGroq(system: string, userMessage: string, apiKey: string, ret
     },
     body: JSON.stringify({
       model: 'openai/gpt-oss-120b',
-      max_tokens: 500,
+      // gpt-oss models spend part of this budget on internal reasoning
+      // before writing the actual answer — 500 wasn't enough room for both,
+      // leaving the final content empty.
+      max_tokens: 2000,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: userMessage },
