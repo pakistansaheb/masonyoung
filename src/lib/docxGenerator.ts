@@ -7,6 +7,7 @@ import {
   TableRow,
   TableCell,
   ImageRun,
+  AlignmentType,
   WidthType,
   BorderStyle,
   Header,
@@ -390,6 +391,10 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
       default: {
         document: {
           run: { font: FONT, size: SIZE },
+          // Every body paragraph in the real letters is fully justified
+          // ("jc=both" in the raw XML, confirmed from Location onward
+          // through the signature block) — not left-aligned/ragged-right.
+          paragraph: { alignment: AlignmentType.BOTH },
         },
       },
     },
