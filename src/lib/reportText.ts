@@ -44,7 +44,7 @@ export function tenureParagraph(d: ReportData): string {
       return `The property is held on an existing lease${d.leaseExpiry ? `, which expires on ${d.leaseExpiry}` : ''}. Based on this, we would either be looking to assign the remainder of the term or create a new sub-lease. If a longer term is required by the incoming tenant, then a possible surrender and new lease will have to be negotiated directly with the landlord, subject to confirming covenant strength. We will need to seek landlords' consent in any event.`
     case 'leasehold':
     default:
-      return "From the information you have provided, I understand that the premises are held Freehold. I have not had sight of the title deeds and will require a copy before commencing marketing. We would be grateful if you could confirm the annual building insurance payable for the property."
+      return 'From the information you have provided, I understand that the premises are held Freehold. I have not had sight of the title deeds and will require a copy before commencing marketing.  We would be grateful if you could confirm the annual building insurance payable for the property.'
   }
 }
 
@@ -72,7 +72,7 @@ export function quotingTermsParagraph(d: ReportData): string {
 }
 
 export function conditionParagraph(d: ReportData): string {
-  return `I have not carried out a building survey although would comment that ${d.conditionNotes}.`
+  return `We have not carried out a building survey although we would comment that ${d.conditionNotes}. No doubt any potential occupier will carry out their own investigation as to any remedial work required for their own purposes.`
 }
 
 export function servicesParagraph(d: ReportData): string {

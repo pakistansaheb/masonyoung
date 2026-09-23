@@ -82,8 +82,7 @@ export const BLANK_REPORT: ReportData = {
   groundRentReviewYears: '7',
   tenureNotes: '',
   servicesNotes: 'mains gas, water and electricity',
-  conditionNotes:
-    'the condition of the building is reasonable for its age and use. No doubt any potential occupier will carry out their own investigation as to the condition and whether any remedial work is required for their own purposes',
+  conditionNotes: 'the accommodation is in reasonable condition for its age and use',
   groundFloorSqFt: '',
   groundFloorSqM: '',
   firstFloorSqFt: '',
