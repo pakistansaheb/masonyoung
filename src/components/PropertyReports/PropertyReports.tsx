@@ -178,8 +178,9 @@ export default function PropertyReports() {
       }))
 
       // Immediately draft the descriptions from what was just read off the
-      // floor plan, rather than waiting for a separate manual click.
-      await runGenerate(data.address, combinedNotes)
+      // floor plan, rather than waiting for a separate manual click — but
+      // only for long form, which is the only one that uses them.
+      if (isLong) await runGenerate(data.address, combinedNotes)
     } catch (err) {
       setOcrError(err instanceof Error ? err.message : 'Could not read the attachment — add notes manually below.')
     } finally {
@@ -317,30 +318,32 @@ export default function PropertyReports() {
         />
       </StepCard>
 
-      <StepCard number={4} title="Location & Property Descriptions">
-        <button
-          type="button"
-          onClick={handleGenerateDescriptions}
-          disabled={generating}
-          className="flex items-center gap-2 bg-my-black hover:bg-black text-white text-sm font-semibold rounded-md px-4 py-2 mb-4 disabled:opacity-50"
-        >
-          {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-          {generating ? 'Generating…' : 'Generate with AI'}
-        </button>
-        {aiError && <p className="text-sm text-red-600 mb-3">{aiError}</p>}
-        <TextAreaField
-          label="Location Description"
-          value={data.locationDescription}
-          onChange={v => set('locationDescription', v)}
-          rows={5}
-        />
-        <TextAreaField
-          label="Property Description"
-          value={data.propertyDescription}
-          onChange={v => set('propertyDescription', v)}
-          rows={5}
-        />
-      </StepCard>
+      {isLong && (
+        <StepCard number={4} title="Location & Property Descriptions">
+          <button
+            type="button"
+            onClick={handleGenerateDescriptions}
+            disabled={generating}
+            className="flex items-center gap-2 bg-my-black hover:bg-black text-white text-sm font-semibold rounded-md px-4 py-2 mb-4 disabled:opacity-50"
+          >
+            {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            {generating ? 'Generating…' : 'Generate with AI'}
+          </button>
+          {aiError && <p className="text-sm text-red-600 mb-3">{aiError}</p>}
+          <TextAreaField
+            label="Location Description"
+            value={data.locationDescription}
+            onChange={v => set('locationDescription', v)}
+            rows={5}
+          />
+          <TextAreaField
+            label="Property Description"
+            value={data.propertyDescription}
+            onChange={v => set('propertyDescription', v)}
+            rows={5}
+          />
+        </StepCard>
+      )}
 
       <StepCard number={5} title="Commercial Terms">
         {data.disposalType === 'freehold' ? (
