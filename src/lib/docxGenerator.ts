@@ -261,11 +261,12 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
       {
         properties: { titlePage: true },
         headers: {
-          // Full letterhead (logo + address + contact details) on page 1,
-          // just the logo on continuation pages — matching every real
-          // Mason Young letter, which never repeats the full block.
+          // Logo + address + contact block appears once, on page 1 only —
+          // no header at all on continuation pages. (Reusing the same
+          // embedded image in a second header was also causing it to
+          // render washed-out/grey — a single ImageRun avoids that too.)
           first: new Header({ children: [logoParagraph(), ...letterheadAddressBlock()] }),
-          default: new Header({ children: [logoParagraph()] }),
+          default: new Header({ children: [] }),
         },
         footers: { default: footer, first: footer },
         children: bodySections,
