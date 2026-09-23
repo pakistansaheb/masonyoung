@@ -13,6 +13,7 @@ Rules, strictly followed:
 - Do not compliment the property's location. Purely describe the location, nothing else.
 - Do not mention businesses being successful or similar commentary.
 - Cover, in this exact order, only where applicable: (1) where the property is situated, (2) what main road(s) it gives access to by name (skip this if the property already sits directly on a main road), (3) the nearest arterial route, (4) how far the nearest motorway is, (5) how far the nearest train station is, (6) how far the nearest city centre is.
+- CRITICAL: never invent or guess a specific fact you are not genuinely confident about — a road name, a distance, a station name, a junction number. If you don't know a specific fact for this address with real confidence, leave that point out of the description entirely rather than writing something plausible-sounding. An omitted fact is fine; a wrong or made-up one is not.
 - Write it as continuous prose (3-6 sentences), not a list.
 - Output ONLY the location description text, nothing else — no preamble, no heading.
 
@@ -26,36 +27,37 @@ Rules, strictly followed:
 - Do not mention businesses being successful or similar commentary.
 - Cover, in this exact order: (1) how the property is situated/constructed — a building-type and construction sentence that MUST include the roof type (e.g. "the property comprises of an end terrace two storey building of brick built construction surmounted by a pitched tiled roof"), (2) how it is set out internally, benefits listed from the ground up: floor, walls, then ceiling/lighting, then fixtures (kitchen, WCs, etc.), (3) what it benefits from externally.
 - Weave in the surveyor's on-site notes provided as the specific benefits/fixtures for that property — treat them as things this property consists of.
+- CRITICAL: only state specific fixtures, materials, or construction details that are either given in the surveyor's notes or are safe, generic defaults (e.g. "plastered and painted walls"). Never invent a specific detail (an exact roof type, a specific fixture) that isn't supported by the notes — if the notes don't mention it, describe that aspect only in general terms or leave it out rather than guessing.
 - Write it as continuous prose (3-5 sentences), not a list.
 - Output ONLY the property description text, nothing else — no preamble, no heading.
 
 Example of the exact tone and structure required:
 "The property comprises of an end terrace two storey building of brick built construction surmounted by a pitched tiled roof. Internally, the ground floor premises benefit from solid floor with tiled covering, part plastered and painted and part tiled walls, suspended ceiling with LED lights, fluorescent strip lights, stainless steel kitchen, extraction canopy and WC facilities. Externally, the property benefits from an electric metal roller shutter."`
 
-async function callClaude(system: string, userMessage: string, apiKey: string): Promise<string> {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+async function callMistral(system: string, userMessage: string, apiKey: string): Promise<string> {
+  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250929',
+      model: 'mistral-small-latest',
       max_tokens: 500,
-      system,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userMessage },
+      ],
     }),
   })
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Anthropic API error ${res.status}: ${text}`)
+    throw new Error(`Mistral API error ${res.status}: ${text}`)
   }
 
-  const json = (await res.json()) as { content: { type: string; text?: string }[] }
-  const textBlock = json.content.find(b => b.type === 'text')
-  return textBlock?.text?.trim() ?? ''
+  const json = (await res.json()) as { choices: { message: { content: string } }[] }
+  return json.choices[0]?.message?.content?.trim() ?? ''
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -63,9 +65,9 @@ export default async function handler(req: Request): Promise<Response> {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.MISTRAL_API_KEY
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY is not configured on the server' }), { status: 500 })
+    return new Response(JSON.stringify({ error: 'MISTRAL_API_KEY is not configured on the server' }), { status: 500 })
   }
 
   let body: RequestBody
@@ -82,8 +84,8 @@ export default async function handler(req: Request): Promise<Response> {
 
   try {
     const [location, property] = await Promise.all([
-      callClaude(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey),
-      callClaude(
+      callMistral(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey),
+      callMistral(
         PROPERTY_SYSTEM,
         `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes?.trim() || '(no notes provided — use only general, non-specific phrasing and leave fixture details generic)'}`,
         apiKey

@@ -5,6 +5,7 @@ import { TextField, TextAreaField } from './fields'
 import { BLANK_REPORT, type ReportData, type DisposalType, type FormLength } from './types'
 import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
+import { ocrFloorPlan } from '../../lib/ocr'
 
 const REPORT_TYPE_OPTIONS: {
   key: string
@@ -50,6 +51,8 @@ export default function PropertyReports() {
   const [aiError, setAiError] = useState('')
   const [building, setBuilding] = useState(false)
   const [openError, setOpenError] = useState('')
+  const [ocrRunning, setOcrRunning] = useState(false)
+  const [ocrError, setOcrError] = useState('')
 
   const isLong = data.formLength === 'long'
 
@@ -63,10 +66,31 @@ export default function PropertyReports() {
     setData(prev => ({ ...prev, disposalType: opt.disposalType, formLength: opt.formLength }))
   }
 
-  function onFilesChosen(files: FileList | null) {
-    if (!files) return
-    const names = Array.from(files).map(f => f.name)
+  async function onFilesChosen(files: FileList | null) {
+    if (!files || files.length === 0) return
+    const fileArr = Array.from(files)
+    const names = fileArr.map(f => f.name)
     setData(prev => ({ ...prev, attachmentNames: [...prev.attachmentNames, ...names] }))
+
+    const imageFiles = fileArr.filter(f => f.type.startsWith('image/'))
+    if (imageFiles.length === 0) return
+
+    setOcrError('')
+    setOcrRunning(true)
+    try {
+      const texts = await Promise.all(imageFiles.map(f => ocrFloorPlan(f)))
+      const extracted = texts.filter(t => t.trim()).join('\n')
+      if (extracted) {
+        setData(prev => ({
+          ...prev,
+          floorPlanNotes: prev.floorPlanNotes ? `${prev.floorPlanNotes}\n${extracted}` : extracted,
+        }))
+      }
+    } catch (err) {
+      setOcrError(err instanceof Error ? err.message : 'Could not read text from the photo — add notes manually below.')
+    } finally {
+      setOcrRunning(false)
+    }
   }
 
   async function handleGenerateDescriptions() {
@@ -179,6 +203,12 @@ export default function PropertyReports() {
         <p className="text-xs text-gray-400 mb-3">
           Floor plans, site photos, anything useful — on a phone this opens the camera.
         </p>
+        {ocrRunning && (
+          <p className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+            <Loader2 size={14} className="animate-spin" /> Reading text off the photo…
+          </p>
+        )}
+        {ocrError && <p className="text-xs text-amber-700 mb-3">{ocrError}</p>}
         {data.attachmentNames.length > 0 && (
           <ul className="text-sm text-gray-600 mb-3 list-disc pl-5">
             {data.attachmentNames.map((n, i) => (
@@ -204,7 +234,7 @@ export default function PropertyReports() {
           className="flex items-center gap-2 bg-my-black hover:bg-black text-white text-sm font-semibold rounded-md px-4 py-2 mb-4 disabled:opacity-50"
         >
           {generating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-          {generating ? 'Generating…' : 'Generate with Claude'}
+          {generating ? 'Generating…' : 'Generate with AI'}
         </button>
         {aiError && <p className="text-sm text-red-600 mb-3">{aiError}</p>}
         <TextAreaField
