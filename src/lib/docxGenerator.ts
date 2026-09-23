@@ -86,7 +86,7 @@ const LOGO_HEIGHT_PT = 90
 // space became the box's LEFT portion, pushing real ink further left than
 // intended and into the "Re:" line's territory.
 const ADDRESS_BLOCK_WIDTH_PT = 86
-const ADDRESS_BLOCK_HEIGHT_PT = 81
+const ADDRESS_BLOCK_HEIGHT_PT = 70
 
 function ordinalSuffix(day: number): string {
   if (day >= 11 && day <= 13) return 'th'
