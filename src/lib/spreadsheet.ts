@@ -103,6 +103,7 @@ function extractFromRows(rows: string[][]): FloorScheduleData {
 
     // A header row (these schedules repeat one per section) — (re)locate
     // each column; layouts can shift between sections.
+    let isHeaderRow = false
     const commentsIdx = cells.findIndex(c => c.toLowerCase() === 'comments')
     const sqmIdx = cells.findIndex(c => c.toLowerCase() === 'sq m')
     const sqftIdx = cells.findIndex(c => c.toLowerCase() === 'sq ft')
@@ -110,16 +111,16 @@ function extractFromRows(rows: string[][]): FloorScheduleData {
       if (commentsIdx !== -1) cols.comments = commentsIdx
       if (sqmIdx !== -1) cols.sqm = sqmIdx
       if (sqftIdx !== -1) cols.sqft = sqftIdx
-      continue
+      isHeaderRow = true
     }
 
-    // A standalone floor-section label, e.g. "Ground Floor" — remember it
-    // so the next "Sub - Total" row's figures can be attributed to it.
+    // A floor-section label, e.g. "Ground Floor" — remember it so the next
+    // "Sub - Total" row's figures can be attributed to it. Real schedules
+    // often carry a Comments-column note on the SAME row as the label (the
+    // comments list runs down independently of the room/floor rows), so
+    // this must not require the label to be the row's only cell.
     const floorLabelCell = cells.find(c => FLOOR_LABEL_RE.test(c))
-    if (floorLabelCell && cells.filter(Boolean).length === 1) {
-      currentFloor = normaliseFloorLabel(floorLabelCell)
-      continue
-    }
+    if (floorLabelCell) currentFloor = normaliseFloorLabel(floorLabelCell)
 
     if (cells.some(c => /^sub\s*-?\s*total$/i.test(c))) {
       if (currentFloor) {
@@ -130,18 +131,17 @@ function extractFromRows(rows: string[][]): FloorScheduleData {
           sqM: sqmCell && isNumericLike(sqmCell) ? Math.round(Number(sqmCell)) : null,
         }
       }
-      continue
-    }
-
-    if (cells.some(c => c.toLowerCase() === 'grand total')) {
+    } else if (cells.some(c => c.toLowerCase() === 'grand total')) {
       const sqftCell = cols.sqft !== null ? cells[cols.sqft] : undefined
       const sqmCell = cols.sqm !== null ? cells[cols.sqm] : undefined
       if (sqftCell && isNumericLike(sqftCell)) totalSqFt = Math.round(Number(sqftCell))
       if (sqmCell && isNumericLike(sqmCell)) totalSqM = Math.round(Number(sqmCell))
-      continue
     }
 
-    if (cols.comments === null) continue
+    // The Comments column is read on EVERY row (header rows excepted) —
+    // notes run down that column independently of whichever kind of row
+    // (room, floor label, sub-total, grand total) sits alongside them.
+    if (isHeaderRow || cols.comments === null) continue
     const cell = cells[cols.comments]
     if (cell && !isNumericLike(cell) && !isDateLike(cell) && !isStructural(cell)) {
       notes.push(cell)
