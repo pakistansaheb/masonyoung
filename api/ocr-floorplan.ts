@@ -1,43 +1,64 @@
 // Reads text off an attached floor plan photo/scan using OCR.space,
 // so surveyor's notes on the image get pulled into the app automatically.
 
+import type { IncomingMessage, ServerResponse } from 'http'
+
 export const maxDuration = 30
 
-export default async function handler(req: Request): Promise<Response> {
+// The uploaded image comes through as a raw binary body, not JSON — turn
+// off Vercel's automatic body parsing so we get the untouched bytes.
+export const config = { api: { bodyParser: false } }
+
+function send(res: ServerResponse, status: number, body: object) {
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
+function readRawBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    req.on('data', chunk => chunks.push(chunk))
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+export default async function handler(req: IncomingMessage & { url?: string; headers: Record<string, string | undefined> }, res: ServerResponse) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+    return send(res, 405, { error: 'Method not allowed' })
   }
 
   const apiKey = process.env.OCR_SPACE_API_KEY
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'OCR_SPACE_API_KEY is not configured on the server' }), { status: 500 })
+    return send(res, 500, { error: 'OCR_SPACE_API_KEY is not configured on the server' })
   }
 
-  const url = new URL(req.url)
+  const url = new URL(req.url ?? '', 'http://localhost')
   const filename = url.searchParams.get('filename') || 'upload.jpg'
-  const contentType = req.headers.get('content-type') || 'image/jpeg'
+  const contentType = req.headers['content-type'] || 'image/jpeg'
 
   try {
-    const bytes = await req.arrayBuffer()
+    const bytes = await readRawBody(req)
     const form = new FormData()
     form.append('apikey', apiKey)
     form.append('language', 'eng')
     form.append('OCREngine', '2')
     form.append('isOverlayRequired', 'true')
-    form.append('file', new Blob([bytes], { type: contentType }), filename)
+    form.append('file', new Blob([new Uint8Array(bytes)], { type: contentType }), filename)
 
-    const res = await fetch('https://api.ocr.space/parse/image', {
+    const ocrRes = await fetch('https://api.ocr.space/parse/image', {
       method: 'POST',
       body: form,
       signal: AbortSignal.timeout(25000),
     })
 
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`OCR.space error ${res.status}: ${text}`)
+    if (!ocrRes.ok) {
+      const text = await ocrRes.text()
+      throw new Error(`OCR.space error ${ocrRes.status}: ${text}`)
     }
 
-    const json = (await res.json()) as {
+    const json = (await ocrRes.json()) as {
       IsErroredOnProcessing?: boolean
       ErrorMessage?: string[] | string
       ParsedResults?: { ParsedText: string; TextOverlay?: { Lines?: Line[] } }[]
@@ -50,12 +71,9 @@ export default async function handler(req: Request): Promise<Response> {
 
     const text = extractNotesFromOverlay(json.ParsedResults ?? [])
 
-    return new Response(JSON.stringify({ text }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
+    send(res, 200, { text })
   } catch (err) {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'OCR failed' }), { status: 502 })
+    send(res, 502, { error: err instanceof Error ? err.message : 'OCR failed' })
   }
 }
 

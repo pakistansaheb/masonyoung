@@ -1,6 +1,8 @@
-// Vercel serverless function (Node runtime).
+// Vercel serverless function (classic Node.js req/res signature).
 // Generates the Location Description and Property Description for a
 // Mason Young disposal report, following the firm's exact house style.
+
+import type { IncomingMessage, ServerResponse } from 'http'
 
 interface RequestBody {
   address: string
@@ -66,26 +68,30 @@ async function callMistral(system: string, userMessage: string, apiKey: string):
 // before Mistral could respond. This raises the ceiling explicitly.
 export const maxDuration = 30
 
-export default async function handler(req: Request): Promise<Response> {
+function send(res: ServerResponse, status: number, body: object) {
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify(body))
+}
+
+export default async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+    return send(res, 405, { error: 'Method not allowed' })
   }
 
   const apiKey = process.env.MISTRAL_API_KEY
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: 'MISTRAL_API_KEY is not configured on the server' }), { status: 500 })
+    return send(res, 500, { error: 'MISTRAL_API_KEY is not configured on the server' })
   }
 
-  let body: RequestBody
-  try {
-    body = await req.json()
-  } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 })
+  const body = req.body as RequestBody | undefined
+  if (!body || typeof body !== 'object') {
+    return send(res, 400, { error: 'Invalid JSON body' })
   }
 
   const { address, floorPlanNotes } = body
   if (!address?.trim()) {
-    return new Response(JSON.stringify({ error: 'address is required' }), { status: 400 })
+    return send(res, 400, { error: 'address is required' })
   }
 
   try {
@@ -98,12 +104,9 @@ export default async function handler(req: Request): Promise<Response> {
       ),
     ])
 
-    return new Response(JSON.stringify({ location, property }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
+    send(res, 200, { location, property })
   } catch (err) {
-    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }), { status: 502 })
+    send(res, 502, { error: err instanceof Error ? err.message : 'Unknown error' })
   }
 }
 
