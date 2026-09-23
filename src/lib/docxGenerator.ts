@@ -7,11 +7,14 @@ import {
   TableRow,
   TableCell,
   ImageRun,
-  AlignmentType,
   WidthType,
   BorderStyle,
   Header,
   Footer,
+  HorizontalPositionRelativeFrom,
+  VerticalPositionRelativeFrom,
+  TextWrappingType,
+  DocumentGridType,
 } from 'docx'
 import { saveAs } from 'file-saver'
 import type { ReportData } from '../components/PropertyReports/types'
@@ -28,7 +31,6 @@ import {
   MARKETING_COSTS_ROWS,
   MARKETING_INTRO,
   MARKETING_OUTRO,
-  MASON_YOUNG_BRAND_LINES,
 } from './letterBoilerplate'
 import {
   reLine,
@@ -41,10 +43,33 @@ import {
   measurementsParagraph,
 } from './reportText'
 import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
+import { LETTERHEAD_ADDRESS_BLOCK_BASE64 } from '../assets/letterheadAddressBase64'
+import { MASON_YOUNG_FOOTER_BRAND_BASE64 } from '../assets/footerBrandBase64'
 
-const RED = 'C8102E'
 const FONT = 'Arial'
 const SIZE = 20 // half-points; 20 = 10pt
+
+// Page geometry (twips = 1/1440in) — A4, matching the real letterhead's own
+// page size. Margins are the standard 1in on all sides (matching the real
+// Moseley Road letter) rather than the narrower 0.79in the Sultan Vittoria
+// Street letter happens to use — narrower margins make the body column
+// WIDER, the opposite of what's needed here.
+const PAGE_WIDTH_TWIPS = 11906
+const PAGE_HEIGHT_TWIPS = 16838
+const MARGIN_LEFT_TWIPS = 1440
+const MARGIN_RIGHT_TWIPS = 1440
+const MARGIN_TOP_TWIPS = 1440
+// The footer's brand image (real letterhead offsets, see the footer
+// paragraph below) floats upward about 997 twips past the normal bottom
+// margin line. Without extra clearance here, body content that runs close
+// to the page bottom (a signature block, for instance) visually collides
+// with it — so the usable body area ends this much earlier.
+const MARGIN_BOTTOM_TWIPS = 1440 + 1050
+const HEADER_DISTANCE_TWIPS = 708
+const FOOTER_DISTANCE_TWIPS = 708
+const TWIP_TO_EMU = 635
+const LOGO_WIDTH_PT = 82
+const LOGO_HEIGHT_PT = 90
 
 function ordinalSuffix(day: number): string {
   if (day >= 11 && day <= 13) return 'th'
@@ -147,33 +172,75 @@ function marketingTable(): Table {
   })
 }
 
-const LETTERHEAD_SIZE = 14 // half-points; 14 = 7pt — the real letterhead's exact size, smaller than 10pt body text
+// The address/contact block, pre-rendered to a single image (right-aligned
+// Arial 7pt, 150x81pt at 1:1 scale). This is a deliberate departure from
+// the real letterhead's raw XML, where these lines are plain text
+// paragraphs: in THIS renderer, plain in-flow text paragraphs in the
+// header — even ones matching the real file's structure paragraph-for-
+// paragraph — measurably push the page's top margin down (verified: an
+// empty header renders the body at 8.8% down the page, the same 10-line
+// text block pushes it to 24%, while a floating IMAGE of any size verified
+// at 0% extra push). A floating image is the only mechanism confirmed to
+// contribute zero flow height, so the text is rendered once to a bitmap
+// and floated exactly like the logo above it.
+function letterheadAddressImage(): Paragraph {
+  const widthPt = 150
+  const heightPt = 81
+  const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
+  const horizontalOffsetEmu = usableWidthEmu - widthPt * 12700
+  const verticalOffsetEmu = LOGO_HEIGHT_PT * 12700 + 6985 // starts right below the logo
 
-function rightAlignedLine(text: string): Paragraph {
   return new Paragraph({
-    alignment: AlignmentType.RIGHT,
-    spacing: { before: 0, after: 0 },
-    children: [new TextRun({ text, font: FONT, size: LETTERHEAD_SIZE })],
+    children: [
+      new ImageRun({
+        data: base64ToBytes(LETTERHEAD_ADDRESS_BLOCK_BASE64),
+        transformation: { width: widthPt, height: heightPt },
+        type: 'png',
+        floating: {
+          horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: horizontalOffsetEmu },
+          verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: verticalOffsetEmu },
+          allowOverlap: true,
+          behindDocument: true,
+          wrap: { type: TextWrappingType.NONE },
+        },
+      }),
+    ],
   })
 }
 
-function letterheadAddressBlock(): Paragraph[] {
-  return [
-    ...LETTERHEAD.addressLines.map(rightAlignedLine),
-    rightAlignedLine(''),
-    rightAlignedLine(`T: ${LETTERHEAD.tel}`),
-    rightAlignedLine(`F: ${LETTERHEAD.fax}`),
-    rightAlignedLine(`E: ${LETTERHEAD.email}`),
-    rightAlignedLine(`W: ${LETTERHEAD.web}`),
-  ]
-}
-
 function logoParagraph(): Paragraph {
-  // Exact size from the real letterhead: 82x90pt (portrait) — was
-  // previously 90x74 (landscape), the wrong aspect ratio entirely.
+  // Matches the real letterhead exactly: the logo is a FLOATING image
+  // (anchored, positioned absolutely, behind the text) rather than an
+  // inline image sitting in the header's normal text flow. An inline
+  // image at 90pt tall — plus the address block below it — pushes the
+  // whole letter body down the page; a floating image doesn't consume
+  // any flow height at all, which is why the real letter's body starts
+  // right at the top margin instead of a couple of inches down.
+  // Flush against the right margin: computed from the actual page geometry
+  // rather than a magic number lifted from one specific reference file, so
+  // it stays correct if the margins ever change.
+  const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
+  const logoWidthEmu = LOGO_WIDTH_PT * 12700
+  const horizontalOffsetEmu = usableWidthEmu - logoWidthEmu
+
   return new Paragraph({
-    alignment: AlignmentType.RIGHT,
-    children: [new ImageRun({ data: base64ToBytes(MASON_YOUNG_LOGO_BASE64), transformation: { width: 82, height: 90 }, type: 'jpg' })],
+    children: [
+      new ImageRun({
+        data: base64ToBytes(MASON_YOUNG_LOGO_BASE64),
+        transformation: { width: LOGO_WIDTH_PT, height: LOGO_HEIGHT_PT },
+        type: 'jpg',
+        // Vertical offset (6985 EMU, relative to the anchor paragraph) is
+        // the exact value from the real letterhead's XML — it's a tiny
+        // nudge independent of margin width, so it's safe to reuse as-is.
+        floating: {
+          horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: horizontalOffsetEmu },
+          verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: 6985 },
+          allowOverlap: true,
+          behindDocument: true,
+          wrap: { type: TextWrappingType.NONE },
+        },
+      }),
+    ],
   })
 }
 
@@ -246,43 +313,28 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
 
   const footer = new Footer({
     children: [
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        borders: {
-          top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-          bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-          left: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-          right: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-          insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-          insideVertical: { style: BorderStyle.NONE, size: 0, color: 'auto' },
-        },
-        rows: [
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 22, type: WidthType.PERCENTAGE },
-                children: MASON_YOUNG_BRAND_LINES.map(
-                  label =>
-                    new Paragraph({
-                      spacing: { before: 0, after: 0 },
-                      children: [
-                        new TextRun({ text: '■ ', font: FONT, size: 12, color: RED }),
-                        new TextRun({ text: label, font: FONT, size: 12, color: RED, bold: true }),
-                      ],
-                    })
-                ),
-              }),
-              new TableCell({
-                width: { size: 78, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    spacing: { before: 0, after: 0 },
-                    children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
-                  }),
-                ],
-              }),
-            ],
+      new Paragraph({
+        // Exact structure and offsets from the real letterhead's footer
+        // XML: the "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't
+        // text — it's a single floating (anchored, behind-text) image —
+        // followed by the trading-name text in the same paragraph, left
+        // indented to clear the image.
+        indent: { left: 1800 },
+        spacing: { before: 0, after: 0 },
+        children: [
+          new ImageRun({
+            data: base64ToBytes(MASON_YOUNG_FOOTER_BRAND_BASE64),
+            transformation: { width: 90, height: 73 },
+            type: 'jpg',
+            floating: {
+              horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: -114300 },
+              verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: -633095 },
+              allowOverlap: true,
+              behindDocument: true,
+              wrap: { type: TextWrappingType.NONE },
+            },
           }),
+          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '999999' }),
         ],
       }),
     ],
@@ -298,13 +350,27 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
     },
     sections: [
       {
-        properties: { titlePage: true },
+        properties: {
+          titlePage: true,
+          page: {
+            size: { width: PAGE_WIDTH_TWIPS, height: PAGE_HEIGHT_TWIPS },
+            margin: {
+              top: MARGIN_TOP_TWIPS,
+              bottom: MARGIN_BOTTOM_TWIPS,
+              left: MARGIN_LEFT_TWIPS,
+              right: MARGIN_RIGHT_TWIPS,
+              header: HEADER_DISTANCE_TWIPS,
+              footer: FOOTER_DISTANCE_TWIPS,
+            },
+          },
+          grid: { type: DocumentGridType.DEFAULT, linePitch: 360 },
+        },
         headers: {
           // Logo + address + contact block appears once, on page 1 only —
           // no header at all on continuation pages. (Reusing the same
           // embedded image in a second header was also causing it to
           // render washed-out/grey — a single ImageRun avoids that too.)
-          first: new Header({ children: [logoParagraph(), ...letterheadAddressBlock()] }),
+          first: new Header({ children: [logoParagraph(), letterheadAddressImage()] }),
           default: new Header({ children: [] }),
         },
         footers: { default: footer, first: footer },

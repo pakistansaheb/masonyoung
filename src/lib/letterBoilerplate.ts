@@ -51,14 +51,5 @@ export const MARKETING_COSTS_ROWS: [string, string][] = [
 export const MARKETING_INTRO =
   'In order to achieve the greatest level of success, it would be prudent to carry out some limited marketing and the following are suggestions of a very basic campaign:-'
 
-export const MASON_YOUNG_BRAND_LINES = [
-  'MY BUSINESS SPACE',
-  'MY MANAGEMENT',
-  'MY LEASE CONSULTANCY',
-  'MY DEVELOPMENT',
-  'MY INVESTMENT',
-  'MY AUCTIONS',
-]
-
 export const MARKETING_OUTRO =
   'In the current economic climate, the marketing of the building could take in the order of 1-3 months to achieve, assuming that all suggested forms of marketing initiatives are adopted. Should further marketing be required, no costs will be incurred until it has been agreed in writing beforehand. All of the above and more will be discussed with you in further detail.'
