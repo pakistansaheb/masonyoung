@@ -12,32 +12,17 @@ export interface FloorScheduleData {
   totalSqFt: number | null
 }
 
-const STRUCTURAL_LABELS = new Set([
-  'sq m',
-  'sq ft',
-  'comments',
-  'room',
-  'sub - total',
-  'sub-total',
-  'subtotal',
-  'grand total',
-])
-
 const isNumericLike = (s: string) => /^-?\d+(\.\d+)?$/.test(s)
 const isDateLike = (s: string) => /^\d{1,2}[./]\d{1,2}[./]\d{2,4}$/.test(s)
-// A cell containing a UK postcode is almost always the property's own
-// address (often repeated as a sheet title) — the address is already
-// passed separately, so it's excluded here rather than duplicated as a note.
-const isAddressLike = (s: string) => /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i.test(s)
-const isRoomLabel = (s: string) => /^room\s*\d+$/i.test(s) || /^(ground|first|second|third|basement|lower ground)\s*floor$/i.test(s)
-const isStructural = (s: string) => STRUCTURAL_LABELS.has(s.toLowerCase())
+const isStructural = (s: string) => ['sq m', 'sq ft', 'comments', 'room', 'sub - total', 'sub-total', 'subtotal', 'grand total'].includes(s.toLowerCase())
 
 /**
  * Reads a floor area schedule spreadsheet (room-by-room SQ M / SQ FT table
  * with a Comments column, and a Grand Total row) and pulls out:
- * - the descriptive notes (whatever's in the Comments column, or any other
- *   free-text cell that isn't a number, date, or structural label like
- *   "Sub - Total" / "Room 1" / "SQ FT")
+ * - notes: ONLY the values in the Comments column specifically (found by
+ *   locating the "Comments" header cell and tracking its column position),
+ *   never a room description or any other column that happens to sit next
+ *   to it
  * - the total floor area in sq ft, read directly from the Grand Total row
  *   rather than summed from scattered numbers (which would double-count
  *   sub-totals)
@@ -45,7 +30,7 @@ const isStructural = (s: string) => STRUCTURAL_LABELS.has(s.toLowerCase())
 export async function extractFloorSchedule(file: File): Promise<FloorScheduleData> {
   if (file.name.toLowerCase().endsWith('.csv')) {
     const text = (await file.text()).trim()
-    return { notes: text, totalSqFt: extractGrandTotalFromText(text) }
+    return { notes: extractCommentsColumnFromCsv(text), totalSqFt: extractGrandTotalFromText(text) }
   }
 
   const buffer = await file.arrayBuffer()
@@ -58,28 +43,61 @@ export async function extractFloorSchedule(file: File): Promise<FloorScheduleDat
     const sheet = workbook.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false })
 
-    for (const row of rows) {
-      const cells = row.map(c => String(c ?? '').trim()).filter(Boolean)
-      if (cells.length === 0) continue
+    let commentsColIndex: number | null = null
 
-      const isGrandTotalRow = cells.some(c => c.toLowerCase() === 'grand total')
-      if (isGrandTotalRow) {
+    for (const rawRow of rows) {
+      // Array.from densifies: sheet_to_json rows can have sparse "holes"
+      // for empty cells, which .map() silently skips but .findIndex()
+      // does not (it visits every index and passes undefined for holes).
+      const cells = Array.from(rawRow, c => (c == null ? '' : String(c).trim()))
+      if (cells.every(c => !c)) continue
+
+      // A header row (repeats per section in these schedules) — (re)locate
+      // the Comments column; layouts can shift between sections.
+      const headerIdx = cells.findIndex(c => c.toLowerCase() === 'comments')
+      if (headerIdx !== -1) {
+        commentsColIndex = headerIdx
+        continue
+      }
+
+      if (cells.some(c => c.toLowerCase() === 'grand total')) {
         const numbers = cells.filter(isNumericLike).map(Number)
-        // Sq ft is always the larger figure of the sq m / sq ft pair for
-        // any real room size, so take the max rather than assuming a
-        // fixed column position (layouts vary between sections).
+        // Sq ft is always the larger of the sq m / sq ft pair, so take the
+        // max rather than assuming a fixed column position.
         if (numbers.length > 0) totalSqFt = Math.round(Math.max(...numbers))
         continue
       }
 
-      for (const cell of cells) {
-        if (isNumericLike(cell) || isDateLike(cell) || isRoomLabel(cell) || isStructural(cell) || isAddressLike(cell)) continue
+      if (commentsColIndex === null) continue
+      const cell = cells[commentsColIndex]
+      if (cell && !isNumericLike(cell) && !isDateLike(cell) && !isStructural(cell)) {
         notesSet.add(cell)
       }
     }
   }
 
   return { notes: Array.from(notesSet).join('\n'), totalSqFt }
+}
+
+function extractCommentsColumnFromCsv(text: string): string {
+  const rows = text.split('\n').map(line => line.split(',').map(c => c.trim()))
+  let commentsColIndex: number | null = null
+  const notes: string[] = []
+
+  for (const cells of rows) {
+    if (cells.every(c => !c)) continue
+    const headerIdx = cells.findIndex(c => c.toLowerCase() === 'comments')
+    if (headerIdx !== -1) {
+      commentsColIndex = headerIdx
+      continue
+    }
+    if (cells.some(c => c.toLowerCase() === 'grand total')) continue
+    if (commentsColIndex === null) continue
+    const cell = cells[commentsColIndex]
+    if (cell && !isNumericLike(cell) && !isDateLike(cell) && !isStructural(cell)) notes.push(cell)
+  }
+
+  return notes.join('\n')
 }
 
 function extractGrandTotalFromText(text: string): number | null {

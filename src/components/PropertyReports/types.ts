@@ -8,6 +8,7 @@ export interface ReportData {
 
   // Step 2
   clientName: string // full name, e.g. "Graham Clough" — used in the recipient address block
+  clientAddress: string // the recipient's own mailing address (often different from the property address) — comma-separated, one line per segment
   clientSalutation: string // e.g. "Dear James" or "Dear Mr Lacey"
   address: string // full multi-line address, as it should appear in the Re: line and letter address block
   postTown: string
@@ -51,6 +52,7 @@ export const BLANK_REPORT: ReportData = {
   disposalType: 'freehold',
   formLength: 'long',
   clientName: '',
+  clientAddress: '',
   clientSalutation: '',
   address: '',
   postTown: '',

@@ -219,6 +219,13 @@ export default function PropertyReports() {
           hint="Used in the recipient address block at the top of the letter."
         />
         <TextField
+          label="Client address"
+          value={data.clientAddress}
+          onChange={v => set('clientAddress', v)}
+          placeholder="Saya GB Limited, Ground Floor, 182 Uxbridge Road, London, England, W12 7JP"
+          hint="Where the letter is addressed to — often different from the property address. Leave blank to use the property address instead."
+        />
+        <TextField
           label="Client salutation"
           value={data.clientSalutation}
           onChange={v => set('clientSalutation', v)}

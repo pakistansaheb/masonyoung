@@ -74,21 +74,45 @@ function base64ToBytes(dataUri: string): Uint8Array {
   return bytes
 }
 
-function bodyText(text: string): Paragraph[] {
-  return text.split('\n').map(
-    line =>
-      new Paragraph({
-        spacing: { after: 200 },
-        children: [new TextRun({ text: line, font: FONT, size: SIZE })],
-      })
-  )
+// Matches the real Mason Young templates exactly: paragraphs carry no
+// spacing.before/after of their own — every visual gap between a heading
+// and its text, and between separate paragraphs, is a literal blank
+// paragraph line. Confirmed by inspecting the source .doc's raw XML.
+function plainRun(text: string): Paragraph {
+  return new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text, font: FONT, size: SIZE })] })
+}
+
+function blank(): Paragraph {
+  return plainRun('')
 }
 
 function heading(text: string): Paragraph {
   return new Paragraph({
-    spacing: { before: 200, after: 100 },
+    spacing: { before: 0, after: 0 },
     children: [new TextRun({ text, bold: true, underline: {}, font: FONT, size: SIZE })],
   })
+}
+
+/** Splits multi-paragraph text on \n and inserts a blank line between each. */
+function bodyText(text: string): Paragraph[] {
+  const lines = text.split('\n')
+  const out: Paragraph[] = []
+  lines.forEach((line, i) => {
+    out.push(plainRun(line))
+    if (i < lines.length - 1) out.push(blank())
+  })
+  return out
+}
+
+/** Heading, blank, body paragraphs (blank-separated), trailing blank. */
+function section(title: string, ...bodies: string[]): Paragraph[] {
+  const out: Paragraph[] = [heading(title), blank()]
+  bodies.forEach((body, i) => {
+    out.push(...bodyText(body))
+    if (i < bodies.length - 1) out.push(blank())
+  })
+  out.push(blank())
+  return out
 }
 
 function marketingTable(): Table {
@@ -122,101 +146,108 @@ function marketingTable(): Table {
   })
 }
 
-function plainRun(text: string): Paragraph {
-  return new Paragraph({ children: [new TextRun({ text, font: FONT, size: SIZE })], spacing: { after: 0 } })
+function rightAlignedLine(text: string): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.RIGHT,
+    spacing: { before: 0, after: 0 },
+    children: [new TextRun({ text, font: FONT, size: SIZE })],
+  })
+}
+
+function letterheadAddressBlock(): Paragraph[] {
+  return [
+    ...LETTERHEAD.addressLines.map(rightAlignedLine),
+    rightAlignedLine(''),
+    rightAlignedLine(`T: ${LETTERHEAD.tel}`),
+    rightAlignedLine(`F: ${LETTERHEAD.fax}`),
+    rightAlignedLine(`E: ${LETTERHEAD.email}`),
+    rightAlignedLine(`W: ${LETTERHEAD.web}`),
+  ]
+}
+
+function logoParagraph(): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.RIGHT,
+    children: [new ImageRun({ data: base64ToBytes(MASON_YOUNG_LOGO_BASE64), transformation: { width: 90, height: 74 }, type: 'jpg' })],
+  })
 }
 
 export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; filename: string }> {
-  const logoBytes = base64ToBytes(MASON_YOUNG_LOGO_BASE64)
-
   const isLong = d.formLength === 'long'
+  const recipientAddress = (d.clientAddress.trim() || d.address).split(',').map(l => l.trim()).filter(Boolean)
 
   const bodySections: (Paragraph | Table)[] = []
 
   // Date, then the recipient's name and address, matching Mason Young's
-  // standard letter opening — the app previously skipped straight to the
-  // salutation with no date or address block above it.
-  bodySections.push(new Paragraph({ children: [new TextRun({ text: formatDateWithOrdinal(new Date()), font: FONT, size: SIZE })], spacing: { after: 400 } }))
+  // standard letter opening.
+  bodySections.push(plainRun(formatDateWithOrdinal(new Date())))
+  bodySections.push(blank())
   if (d.clientName.trim()) bodySections.push(plainRun(d.clientName.trim()))
-  for (const line of d.address.split(',').map(l => l.trim()).filter(Boolean)) {
-    bodySections.push(plainRun(line))
-  }
-  bodySections.push(new Paragraph({ text: '', spacing: { after: 300 } }))
+  for (const line of recipientAddress) bodySections.push(plainRun(line))
+  bodySections.push(blank())
 
-  bodySections.push(
-    new Paragraph({ children: [new TextRun({ text: d.clientSalutation || 'Dear Sir/Madam', font: FONT, size: SIZE })], spacing: { after: 300 } })
-  )
+  bodySections.push(plainRun(d.clientSalutation || 'Dear Sir/Madam'))
+  bodySections.push(blank())
   bodySections.push(
     new Paragraph({
+      spacing: { before: 0, after: 0 },
       children: [new TextRun({ text: reLine(d), bold: true, underline: {}, font: FONT, size: SIZE })],
-      spacing: { after: 300 },
     })
   )
+  bodySections.push(blank())
   bodySections.push(...bodyText(introParagraph(d)))
+  bodySections.push(blank())
 
   if (isLong) {
-    bodySections.push(heading('Location'))
-    bodySections.push(...bodyText(d.locationDescription || '[Location description not yet generated]'))
+    bodySections.push(...section('Location', d.locationDescription || '[Location description not yet generated]'))
+    bodySections.push(...section('The Property', d.propertyDescription || '[Property description not yet generated]', measurementsParagraph(d)))
+    bodySections.push(...section('Services', servicesParagraph(d)))
+    bodySections.push(...section('Tenure', tenureParagraph(d)))
+    bodySections.push(...section('Condition of the premises', conditionParagraph(d)))
+    bodySections.push(...section('Quoting Terms & Fees', quotingTermsParagraph(d), RICS_DISCLAIMER))
 
-    bodySections.push(heading('The Property'))
-    bodySections.push(...bodyText(d.propertyDescription || '[Property description not yet generated]'))
-    bodySections.push(...bodyText(measurementsParagraph(d)))
-
-    bodySections.push(heading('Services'))
-    bodySections.push(...bodyText(servicesParagraph(d)))
-
-    bodySections.push(heading('Tenure'))
-    bodySections.push(...bodyText(tenureParagraph(d)))
-
-    bodySections.push(heading('Condition of the premises'))
-    bodySections.push(...bodyText(conditionParagraph(d)))
-
-    bodySections.push(heading('Quoting Terms & Fees'))
-    bodySections.push(...bodyText(quotingTermsParagraph(d)))
-    bodySections.push(...bodyText(RICS_DISCLAIMER))
-
-    bodySections.push(heading('Marketing Costs'))
-    bodySections.push(...bodyText(MARKETING_INTRO))
+    bodySections.push(heading('Marketing Costs'), blank(), ...bodyText(MARKETING_INTRO), blank())
     bodySections.push(marketingTable())
-    bodySections.push(...bodyText(MARKETING_OUTRO))
+    bodySections.push(blank(), ...bodyText(MARKETING_OUTRO), blank())
   } else {
-    bodySections.push(...bodyText(shortFormSummary(d)))
-    bodySections.push(...bodyText(RICS_DISCLAIMER))
-    bodySections.push(...bodyText(quotingTermsParagraph(d)))
+    bodySections.push(...bodyText(shortFormSummary(d)), blank())
+    bodySections.push(...bodyText(RICS_DISCLAIMER), blank())
+    bodySections.push(...bodyText(quotingTermsParagraph(d)), blank())
   }
 
-  bodySections.push(heading('Legal Fees'))
-  bodySections.push(...bodyText(LEGAL_FEES))
+  bodySections.push(...section('Legal Fees', LEGAL_FEES))
+  bodySections.push(...section('Viewings', VIEWINGS))
+  bodySections.push(...section('Best & Final Offers', BEST_AND_FINAL))
+  bodySections.push(...section('Other Matters for Consideration', EPC_CLAUSE, AML_CLAUSE))
+  bodySections.push(...section('Conclusion', CONCLUSION))
 
-  bodySections.push(heading('Viewings'))
-  bodySections.push(...bodyText(VIEWINGS))
-
-  bodySections.push(heading('Best & Final Offers'))
-  bodySections.push(...bodyText(BEST_AND_FINAL))
-
-  bodySections.push(heading('Other Matters for Consideration'))
-  bodySections.push(...bodyText(EPC_CLAUSE))
-  bodySections.push(...bodyText(AML_CLAUSE))
-
-  bodySections.push(heading('Conclusion'))
-  bodySections.push(...bodyText(CONCLUSION))
-
+  bodySections.push(plainRun('Yours sincerely'), blank(), blank(), blank(), blank(), blank())
   bodySections.push(
-    new Paragraph({ text: 'Yours sincerely', spacing: { before: 300, after: 600 } }),
-    new Paragraph({ text: SIGNATURE.name, spacing: { after: 0 } }),
-    new Paragraph({ text: SIGNATURE.title, spacing: { after: 0 } }),
-    new Paragraph({ text: SIGNATURE.team, spacing: { after: 0 } }),
-    new Paragraph({ text: SIGNATURE.company, spacing: { after: 0 } }),
-    new Paragraph({ text: `DDI : ${SIGNATURE.ddi}`, spacing: { after: 0 } }),
-    new Paragraph({ text: `E-mail : ${SIGNATURE.email}`, spacing: { after: 400 } }),
-    new Paragraph({
-      text: 'I agree to the Agency Appointment and Terms as provided above in regard to the disposal of the property.',
-      spacing: { after: 400 },
-    }),
-    new Paragraph({ text: 'Signed ……………………………………………………..', spacing: { after: 300 } }),
-    new Paragraph({ text: 'PRINT NAME …………………………………………..', spacing: { after: 300 } }),
-    new Paragraph({ text: 'Date ……………………………………………………..' })
+    plainRun(SIGNATURE.name),
+    plainRun(SIGNATURE.title),
+    plainRun(SIGNATURE.team),
+    plainRun(SIGNATURE.company),
+    plainRun(`DDI : ${SIGNATURE.ddi}`),
+    plainRun(`E-mail : ${SIGNATURE.email}`),
+    blank()
   )
+  bodySections.push(plainRun('I agree to the Agency Appointment and Terms as provided above in regard to the disposal of the property.'))
+  bodySections.push(blank(), blank())
+  bodySections.push(plainRun('Signed ……………………………………………………..'))
+  bodySections.push(blank(), blank())
+  bodySections.push(plainRun('PRINT NAME …………………………………………..'))
+  bodySections.push(blank(), blank())
+  bodySections.push(plainRun('Date ……………………………………………………..'))
+
+  const footer = new Footer({
+    children: [
+      new Paragraph({
+        border: { top: { style: BorderStyle.SINGLE, size: 4, color: RED } },
+        spacing: { before: 100 },
+        children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
+      }),
+    ],
+  })
 
   const doc = new Document({
     styles: {
@@ -228,33 +259,15 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
     },
     sections: [
       {
+        properties: { titlePage: true },
         headers: {
-          default: new Header({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [
-                  new ImageRun({
-                    data: logoBytes,
-                    transformation: { width: 90, height: 74 },
-                    type: 'jpg',
-                  }),
-                ],
-              }),
-            ],
-          }),
+          // Full letterhead (logo + address + contact details) on page 1,
+          // just the logo on continuation pages — matching every real
+          // Mason Young letter, which never repeats the full block.
+          first: new Header({ children: [logoParagraph(), ...letterheadAddressBlock()] }),
+          default: new Header({ children: [logoParagraph()] }),
         },
-        footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                border: { top: { style: BorderStyle.SINGLE, size: 4, color: RED } },
-                spacing: { before: 100 },
-                children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
-              }),
-            ],
-          }),
-        },
+        footers: { default: footer, first: footer },
         children: bodySections,
       },
     ],
