@@ -63,7 +63,28 @@ export default function PropertyReports() {
   function pickReportType(key: string) {
     const opt = REPORT_TYPE_OPTIONS.find(o => o.key === key)!
     setReportTypeKey(key)
-    setData(prev => ({ ...prev, disposalType: opt.disposalType, formLength: opt.formLength }))
+    setData(prev => ({
+      ...prev,
+      disposalType: opt.disposalType,
+      formLength: opt.formLength,
+      // Type-specific commercial terms reset to defaults so numbers typed
+      // for the previous type (e.g. a sale price while on Freehold) don't
+      // linger, unused, after switching to a Leasehold/Short-form type.
+      quotingPrice: BLANK_REPORT.quotingPrice,
+      targetPrice: BLANK_REPORT.targetPrice,
+      quotingRent: BLANK_REPORT.quotingRent,
+      targetRent: BLANK_REPORT.targetRent,
+      saleFeePercent: BLANK_REPORT.saleFeePercent,
+      lettingFeeFirstYearPercent: BLANK_REPORT.lettingFeeFirstYearPercent,
+      managedService: BLANK_REPORT.managedService,
+      managedServiceLettingFeePercent: BLANK_REPORT.managedServiceLettingFeePercent,
+      managementFeePercent: BLANK_REPORT.managementFeePercent,
+      groundFloorSqFt: BLANK_REPORT.groundFloorSqFt,
+      firstFloorSqFt: BLANK_REPORT.firstFloorSqFt,
+      otherFloorSqFt: BLANK_REPORT.otherFloorSqFt,
+      totalSqFt: BLANK_REPORT.totalSqFt,
+      tenureNotes: BLANK_REPORT.tenureNotes,
+    }))
   }
 
   async function onFilesChosen(files: FileList | null) {

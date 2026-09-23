@@ -49,6 +49,7 @@ async function callMistral(system: string, userMessage: string, apiKey: string):
         { role: 'user', content: userMessage },
       ],
     }),
+    signal: AbortSignal.timeout(20000),
   })
 
   if (!res.ok) {
