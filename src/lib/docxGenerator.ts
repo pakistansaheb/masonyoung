@@ -78,7 +78,14 @@ const TWIP_TO_EMU = 635
 // opening paragraph), which looked far worse than matching the template.
 const LOGO_WIDTH_PT = 82
 const LOGO_HEIGHT_PT = 90
-const ADDRESS_BLOCK_WIDTH_PT = 150
+// Tight-cropped to its actual text content (no padding) — the box used to
+// be a fixed 150pt regardless of content, which was fine when the text
+// inside was right-aligned (every line ended flush at the box's right
+// edge, so the box's left edge — mostly empty space — never mattered). Now
+// that the text is left-aligned to match the real letterhead, that empty
+// space became the box's LEFT portion, pushing real ink further left than
+// intended and into the "Re:" line's territory.
+const ADDRESS_BLOCK_WIDTH_PT = 86
 const ADDRESS_BLOCK_HEIGHT_PT = 81
 
 function ordinalSuffix(day: number): string {
@@ -187,22 +194,33 @@ function marketingTable(): Table {
   })
 }
 
-// The address/contact block, pre-rendered to a single image (right-aligned
-// Arial 7pt, 150x81pt at 1:1 scale). This is a deliberate departure from
-// the real letterhead's raw XML, where these lines are plain text
-// paragraphs: in THIS renderer, plain in-flow text paragraphs in the
-// header — even ones matching the real file's structure paragraph-for-
-// paragraph — measurably push the page's top margin down (verified: an
-// empty header renders the body at 8.8% down the page, the same 10-line
-// text block pushes it to 24%, while a floating IMAGE of any size verified
-// at 0% extra push). A floating image is the only mechanism confirmed to
-// contribute zero flow height, so the text is rendered once to a bitmap
-// and floated exactly like the logo above it.
+// The logo and the address block below it share the same LEFT edge in the
+// real letterhead (confirmed: the real XML's logo offset (4902200 EMU) and
+// its address-block indent (7740 twips = 4914900 EMU) are within 1pt of
+// each other) — both computed here as "flush against the right margin
+// for something LOGO_WIDTH_PT wide", since that's what the logo itself is.
+function letterheadColumnLeftOffsetEmu(): number {
+  const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
+  return usableWidthEmu - LOGO_WIDTH_PT * 12700
+}
+
+// The address/contact block, pre-rendered to a single image (LEFT-aligned
+// Arial 7pt, tight-cropped to content — real letters left-align this block
+// rather than right-aligning it, confirmed by pixel-measuring the exemplar:
+// every line starts at the same x, not ends at the same x). This is a
+// deliberate departure from the real letterhead's raw XML, where these
+// lines are plain text paragraphs: in THIS renderer, plain in-flow text
+// paragraphs in the header — even ones matching the real file's structure
+// paragraph-for-paragraph — measurably push the page's top margin down
+// (verified: an empty header renders the body at 8.8% down the page, the
+// same 10-line text block pushes it to 24%, while a floating IMAGE of any
+// size verified at 0% extra push). A floating image is the only mechanism
+// confirmed to contribute zero flow height, so the text is rendered once
+// to a bitmap and floated exactly like the logo above it.
 function letterheadAddressImage(): Paragraph {
   const widthPt = ADDRESS_BLOCK_WIDTH_PT
   const heightPt = ADDRESS_BLOCK_HEIGHT_PT
-  const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
-  const horizontalOffsetEmu = usableWidthEmu - widthPt * 12700
+  const horizontalOffsetEmu = letterheadColumnLeftOffsetEmu()
   const verticalOffsetEmu = LOGO_HEIGHT_PT * 12700 + 6985 // starts right below the logo
 
   return new Paragraph({
@@ -231,12 +249,7 @@ function logoParagraph(): Paragraph {
   // whole letter body down the page; a floating image doesn't consume
   // any flow height at all, which is why the real letter's body starts
   // right at the top margin instead of a couple of inches down.
-  // Flush against the right margin: computed from the actual page geometry
-  // rather than a magic number lifted from one specific reference file, so
-  // it stays correct if the margins ever change.
-  const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
-  const logoWidthEmu = LOGO_WIDTH_PT * 12700
-  const horizontalOffsetEmu = usableWidthEmu - logoWidthEmu
+  const horizontalOffsetEmu = letterheadColumnLeftOffsetEmu()
 
   return new Paragraph({
     children: [
