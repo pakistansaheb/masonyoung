@@ -192,15 +192,17 @@ function marketingTable(): Table {
           new TableCell({ width: col2, children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true, font: FONT, size: SIZE })] })] }),
         ],
       }),
-      ...MARKETING_COSTS_ROWS.map(
-        ([desc, cost]) =>
-          new TableRow({
-            children: [
-              new TableCell({ width: col1, children: [new Paragraph({ children: [new TextRun({ text: desc, font: FONT, size: SIZE })] })] }),
-              new TableCell({ width: col2, children: [new Paragraph({ children: [new TextRun({ text: cost, font: FONT, size: SIZE })] })] }),
-            ],
-          })
-      ),
+      ...MARKETING_COSTS_ROWS.map(([desc, cost]) => {
+        // The Total row is bold in the real letterhead's table, not just
+        // the header row.
+        const bold = desc === 'Total'
+        return new TableRow({
+          children: [
+            new TableCell({ width: col1, children: [new Paragraph({ children: [new TextRun({ text: desc, bold, font: FONT, size: SIZE })] })] }),
+            new TableCell({ width: col2, children: [new Paragraph({ children: [new TextRun({ text: cost, bold, font: FONT, size: SIZE })] })] }),
+          ],
+        })
+      }),
     ],
   })
 }
