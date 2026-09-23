@@ -20,7 +20,6 @@ import {
 import { saveAs } from 'file-saver'
 import type { ReportData } from '../components/PropertyReports/types'
 import {
-  LETTERHEAD,
   SIGNATURE,
   RICS_DISCLAIMER,
   LEGAL_FEES,
@@ -46,6 +45,7 @@ import {
 import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
 import { LETTERHEAD_ADDRESS_BLOCK_BASE64 } from '../assets/letterheadAddressBase64'
 import { MASON_YOUNG_FOOTER_BRAND_BASE64 } from '../assets/footerBrandBase64'
+import { FOOTER_REGLINE_BASE64 } from '../assets/footerReglineBase64'
 import { SIGNATURE_BASE64 } from '../assets/signatureBase64'
 
 const FONT = 'Arial'
@@ -384,31 +384,49 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   bodySections.push(blank(), blank())
   bodySections.push(plainRun('Date ……………………………………………………..'))
 
+  // Plain-paragraph spacing before/after had NO effect on where this text
+  // actually rendered in the footer (verified: identical pixel position
+  // with spacing.before at 0 and at 500 twips) — this renderer pins
+  // footer paragraph text to a fixed position independent of preceding
+  // content. So, like the address block, the trading-name text is
+  // rendered once to a bitmap and floated with an explicit offset,
+  // exactly like the brand-list image next to it — the only mechanism
+  // that's actually controllable here.
+  const footerListImageVerticalOffsetEmu = -633095
+  const footerListHeightPt = 73
+  // Measured from the exemplar: the trading-name text starts about 73% of
+  // the way down the 6-item brand list, not top-aligned with it.
+  const footerTextVerticalOffsetEmu = footerListImageVerticalOffsetEmu + Math.round(0.73 * footerListHeightPt * 12700)
+
   const footer = new Footer({
     children: [
       new Paragraph({
-        // Exact structure and offsets from the real letterhead's footer
-        // XML: the "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't
-        // text — it's a single floating (anchored, behind-text) image —
-        // followed by the trading-name text in the same paragraph, left
-        // indented to clear the image (1800 twips = the image's own 90pt
-        // width).
-        indent: { left: 1800 },
         spacing: { before: 0, after: 0 },
         children: [
           new ImageRun({
             data: base64ToBytes(MASON_YOUNG_FOOTER_BRAND_BASE64),
-            transformation: { width: 90, height: 73 },
+            transformation: { width: 90, height: footerListHeightPt },
             type: 'jpg',
             floating: {
               horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: -114300 },
-              verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: -633095 },
+              verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: footerListImageVerticalOffsetEmu },
               allowOverlap: true,
               behindDocument: true,
               wrap: { type: TextWrappingType.NONE },
             },
           }),
-          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '999999' }),
+          new ImageRun({
+            data: base64ToBytes(FOOTER_REGLINE_BASE64),
+            transformation: { width: 361, height: 24 },
+            type: 'png',
+            floating: {
+              horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: 1143000 },
+              verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: footerTextVerticalOffsetEmu },
+              allowOverlap: true,
+              behindDocument: true,
+              wrap: { type: TextWrappingType.NONE },
+            },
+          }),
         ],
       }),
     ],

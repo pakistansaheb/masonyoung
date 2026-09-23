@@ -7,8 +7,12 @@ export const LETTERHEAD = {
   fax: '0121 285 3536',
   email: 'info@masonyoung.co.uk',
   web: 'www.masonyoung.co.uk',
+  // Zoomed into the exemplar footer directly: this letter's entity/reg
+  // number is "Mason Young JQ Ltd" / 12600246 — different from another
+  // real letter (Vittoria Street) which uses "Mason Young Ltd" / 07042724.
+  // The exemplar is the one being matched here.
   regLine:
-    'Mason Young Property Consultants is a trading name of Mason Young Ltd.  Mason Young Limited is a limited company registered in England & Wales.  Company registration number: 07042724.  Registered office: 6 Warstone Mews, Warstone Lane, Jewellery Quarter, Birmingham, B18 6JB.',
+    'Mason Young Property Consultants is a trading name of Mason Young JQ Ltd.  Mason Young JQ Ltd is a limited company registered in England & Wales.  Company registration number: 12600246.  Registered office: 6 Warstone Mews, Warstone Lane, Jewellery Quarter, Birmingham, B18 6JB.',
 }
 
 export const SIGNATURE = {
