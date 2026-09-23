@@ -151,12 +151,12 @@ function section(title: string, ...bodies: string[]): Paragraph[] {
   return out
 }
 
-const TABLE_ROW_HEIGHT_TWIPS = 500
+const TABLE_ROW_HEIGHT_TWIPS = 320
 
 function marketingTable(): Table {
   const darkBorder = { style: BorderStyle.SINGLE, size: 6, color: '000000' }
   return new Table({
-    width: { size: 70, type: WidthType.PERCENTAGE },
+    width: { size: 55, type: WidthType.PERCENTAGE },
     borders: {
       top: darkBorder,
       bottom: darkBorder,
@@ -358,14 +358,13 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   const footer = new Footer({
     children: [
       new Paragraph({
-        // Structure and offsets from the real letterhead's footer XML: the
-        // "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't text —
-        // it's a single floating (anchored, behind-text) image — followed
-        // by the trading-name text in the same paragraph, left indented to
-        // clear the image. Indent widened and text enlarged beyond the
-        // real file's exact values per feedback: the text was sitting too
-        // close to the brand list and needed to read larger.
-        indent: { left: 2300 },
+        // Exact structure and offsets from the real letterhead's footer
+        // XML: the "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't
+        // text — it's a single floating (anchored, behind-text) image —
+        // followed by the trading-name text in the same paragraph, left
+        // indented to clear the image (1800 twips = the image's own 90pt
+        // width).
+        indent: { left: 1800 },
         spacing: { before: 0, after: 0 },
         children: [
           new ImageRun({
@@ -380,7 +379,7 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
               wrap: { type: TextWrappingType.NONE },
             },
           }),
-          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 16, color: '999999' }),
+          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '999999' }),
         ],
       }),
     ],
