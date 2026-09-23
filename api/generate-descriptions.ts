@@ -48,7 +48,7 @@ async function callGroq(system: string, userMessage: string, apiKey: string, ret
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       max_tokens: 500,
       messages: [
         { role: 'system', content: system },
