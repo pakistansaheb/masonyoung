@@ -291,11 +291,16 @@ function logoParagraph(): Paragraph {
 // Arjamand's real signature, floated just below the "Yours sincerely" line
 // it's anchored to (114300 EMU horizontal offset from the real letterhead's
 // body XML; the vertical offset is enlarged from the real file's 116840 so
-// it clears the "Yours sincerely" text instead of overlapping it).
+// it clears the "Yours sincerely" text instead of overlapping it). Size
+// measured directly off a real rendered letter (82x60pt) rather than the
+// XML's nominal 90x46.45pt — the real file's picture has a negative
+// srcRect crop that stretches the visible ink past its nominal extent, so
+// matching the XML numbers literally rendered visibly smaller than the
+// real signature.
 function signatureImageRun(): ImageRun {
   return new ImageRun({
     data: base64ToBytes(SIGNATURE_BASE64),
-    transformation: { width: 90, height: 47 },
+    transformation: { width: 82, height: 60 },
     type: 'png',
     floating: {
       horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: 114300 },
