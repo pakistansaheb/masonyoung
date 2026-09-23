@@ -40,15 +40,15 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function callMistral(system: string, userMessage: string, apiKey: string, retriesLeft = 2): Promise<string> {
-  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+async function callGroq(system: string, userMessage: string, apiKey: string, retriesLeft = 2): Promise<string> {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'mistral-small-latest',
+      model: 'llama-3.3-70b-versatile',
       max_tokens: 500,
       messages: [
         { role: 'system', content: system },
@@ -59,19 +59,16 @@ async function callMistral(system: string, userMessage: string, apiKey: string, 
   })
 
   if (res.status === 429 && retriesLeft > 0) {
-    // Honor Mistral's own Retry-After if it sends one; otherwise back off
-    // longer each attempt — the free tier's real limit seems to be a
-    // per-minute cap, not per-second, so a few seconds isn't always enough.
     const retryAfterHeader = res.headers.get('retry-after')
     const retryAfterMs = retryAfterHeader ? Number(retryAfterHeader) * 1000 : NaN
     const waitMs = Number.isFinite(retryAfterMs) ? retryAfterMs : (3 - retriesLeft) * 5000
     await sleep(waitMs)
-    return callMistral(system, userMessage, apiKey, retriesLeft - 1)
+    return callGroq(system, userMessage, apiKey, retriesLeft - 1)
   }
 
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(`Mistral API error ${res.status}: ${text}`)
+    throw new Error(`Groq API error ${res.status}: ${text}`)
   }
 
   const json = (await res.json()) as { choices: { message: { content: string } }[] }
@@ -95,9 +92,9 @@ export default async function handler(req: IncomingMessage & { body?: unknown },
     return send(res, 405, { error: 'Method not allowed' })
   }
 
-  const apiKey = process.env.MISTRAL_API_KEY
+  const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) {
-    return send(res, 500, { error: 'MISTRAL_API_KEY is not configured on the server' })
+    return send(res, 500, { error: 'GROQ_API_KEY is not configured on the server' })
   }
 
   const body = req.body as RequestBody | undefined
@@ -111,10 +108,8 @@ export default async function handler(req: IncomingMessage & { body?: unknown },
   }
 
   try {
-    // Run one after the other, not in parallel — Mistral's free tier only
-    // allows roughly one request at a time and rejects concurrent ones.
-    const location = await callMistral(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey)
-    const property = await callMistral(
+    const location = await callGroq(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey)
+    const property = await callGroq(
       PROPERTY_SYSTEM,
       `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes?.trim() || '(no notes provided — use only general, non-specific phrasing and leave fixture details generic)'}`,
       apiKey
