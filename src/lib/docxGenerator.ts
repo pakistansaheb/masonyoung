@@ -15,6 +15,7 @@ import {
   VerticalPositionRelativeFrom,
   TextWrappingType,
   DocumentGridType,
+  HeightRule,
 } from 'docx'
 import { saveAs } from 'file-saver'
 import type { ReportData } from '../components/PropertyReports/types'
@@ -45,6 +46,7 @@ import {
 import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
 import { LETTERHEAD_ADDRESS_BLOCK_BASE64 } from '../assets/letterheadAddressBase64'
 import { MASON_YOUNG_FOOTER_BRAND_BASE64 } from '../assets/footerBrandBase64'
+import { SIGNATURE_BASE64 } from '../assets/signatureBase64'
 
 const FONT = 'Arial'
 const SIZE = 20 // half-points; 20 = 10pt
@@ -68,8 +70,13 @@ const MARGIN_BOTTOM_TWIPS = 1440 + 1050
 const HEADER_DISTANCE_TWIPS = 708
 const FOOTER_DISTANCE_TWIPS = 708
 const TWIP_TO_EMU = 635
-const LOGO_WIDTH_PT = 82
-const LOGO_HEIGHT_PT = 90
+// Bumped up from the real letterhead's exact 82x90pt — the user asked for
+// the logo and the address/contact text under it to be bigger than a
+// literal match.
+const LOGO_WIDTH_PT = 111
+const LOGO_HEIGHT_PT = 122
+const ADDRESS_BLOCK_WIDTH_PT = 195
+const ADDRESS_BLOCK_HEIGHT_PT = 104
 
 function ordinalSuffix(day: number): string {
   if (day >= 11 && day <= 13) return 'th'
@@ -141,19 +148,23 @@ function section(title: string, ...bodies: string[]): Paragraph[] {
   return out
 }
 
+const TABLE_ROW_HEIGHT_TWIPS = 500
+
 function marketingTable(): Table {
+  const darkBorder = { style: BorderStyle.SINGLE, size: 6, color: '000000' }
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 70, type: WidthType.PERCENTAGE },
     borders: {
-      top: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
-      bottom: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
-      left: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
-      right: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
-      insideVertical: { style: BorderStyle.SINGLE, size: 2, color: '999999' },
+      top: darkBorder,
+      bottom: darkBorder,
+      left: darkBorder,
+      right: darkBorder,
+      insideHorizontal: darkBorder,
+      insideVertical: darkBorder,
     },
     rows: [
       new TableRow({
+        height: { value: TABLE_ROW_HEIGHT_TWIPS, rule: HeightRule.ATLEAST },
         children: [
           new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Description', bold: true, font: FONT, size: SIZE })] })] }),
           new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Cost', bold: true, font: FONT, size: SIZE })] })] }),
@@ -162,6 +173,7 @@ function marketingTable(): Table {
       ...MARKETING_COSTS_ROWS.map(
         ([desc, cost]) =>
           new TableRow({
+            height: { value: TABLE_ROW_HEIGHT_TWIPS, rule: HeightRule.ATLEAST },
             children: [
               new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: desc, font: FONT, size: SIZE })] })] }),
               new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cost, font: FONT, size: SIZE })] })] }),
@@ -173,7 +185,7 @@ function marketingTable(): Table {
 }
 
 // The address/contact block, pre-rendered to a single image (right-aligned
-// Arial 7pt, 150x81pt at 1:1 scale). This is a deliberate departure from
+// Arial 9pt, 195x104pt at 1:1 scale). This is a deliberate departure from
 // the real letterhead's raw XML, where these lines are plain text
 // paragraphs: in THIS renderer, plain in-flow text paragraphs in the
 // header — even ones matching the real file's structure paragraph-for-
@@ -184,8 +196,8 @@ function marketingTable(): Table {
 // contribute zero flow height, so the text is rendered once to a bitmap
 // and floated exactly like the logo above it.
 function letterheadAddressImage(): Paragraph {
-  const widthPt = 150
-  const heightPt = 81
+  const widthPt = ADDRESS_BLOCK_WIDTH_PT
+  const heightPt = ADDRESS_BLOCK_HEIGHT_PT
   const usableWidthEmu = (PAGE_WIDTH_TWIPS - MARGIN_LEFT_TWIPS - MARGIN_RIGHT_TWIPS) * TWIP_TO_EMU
   const horizontalOffsetEmu = usableWidthEmu - widthPt * 12700
   const verticalOffsetEmu = LOGO_HEIGHT_PT * 12700 + 6985 // starts right below the logo
@@ -244,11 +256,38 @@ function logoParagraph(): Paragraph {
   })
 }
 
+// Arjamand's real signature, floated over the "Yours sincerely" paragraph —
+// offsets and size (90x47pt) taken from the real letterhead's own body XML.
+function signatureImageRun(): ImageRun {
+  return new ImageRun({
+    data: base64ToBytes(SIGNATURE_BASE64),
+    transformation: { width: 90, height: 47 },
+    type: 'png',
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: 114300 },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: 116840 },
+      allowOverlap: true,
+      behindDocument: false,
+      wrap: { type: TextWrappingType.NONE },
+    },
+  })
+}
+
 export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; filename: string }> {
   const isLong = d.formLength === 'long'
   const recipientAddress = (d.clientAddress.trim() || d.address).split(',').map(l => l.trim()).filter(Boolean)
 
   const bodySections: (Paragraph | Table)[] = []
+
+  // The logo + address block together are taller than the top margin, so
+  // page 1 needs extra clearance before the body starts, or the opening
+  // lines run straight through the address/contact text. Blank lines
+  // (rather than a bigger section margin) keep this a page-1-only effect —
+  // a bigger margin would needlessly push continuation pages down too.
+  const headerHeightTwips = (LOGO_HEIGHT_PT + ADDRESS_BLOCK_HEIGHT_PT) * 20
+  const clearanceNeededTwips = Math.max(0, headerHeightTwips - MARGIN_TOP_TWIPS)
+  const clearanceLines = Math.ceil(clearanceNeededTwips / (SIZE / 2 + 4) / 20)
+  for (let i = 0; i < clearanceLines; i++) bodySections.push(blank())
 
   // Date, then the recipient's name and address, matching Mason Young's
   // standard letter opening.
@@ -293,7 +332,17 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   bodySections.push(...section('Other Matters for Consideration', EPC_CLAUSE, AML_CLAUSE))
   bodySections.push(...section('Conclusion', CONCLUSION))
 
-  bodySections.push(plainRun('Yours sincerely'), blank(), blank(), blank(), blank(), blank())
+  bodySections.push(
+    new Paragraph({
+      spacing: { before: 0, after: 0 },
+      children: [new TextRun({ text: 'Yours sincerely', font: FONT, size: SIZE }), signatureImageRun()],
+    }),
+    blank(),
+    blank(),
+    blank(),
+    blank(),
+    blank()
+  )
   bodySections.push(
     plainRun(SIGNATURE.name),
     plainRun(SIGNATURE.title),
@@ -314,12 +363,14 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   const footer = new Footer({
     children: [
       new Paragraph({
-        // Exact structure and offsets from the real letterhead's footer
-        // XML: the "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't
-        // text — it's a single floating (anchored, behind-text) image —
-        // followed by the trading-name text in the same paragraph, left
-        // indented to clear the image.
-        indent: { left: 1800 },
+        // Structure and offsets from the real letterhead's footer XML: the
+        // "MY BUSINESS SPACE / MANAGEMENT / ..." brand list isn't text —
+        // it's a single floating (anchored, behind-text) image — followed
+        // by the trading-name text in the same paragraph, left indented to
+        // clear the image. Indent widened and text enlarged beyond the
+        // real file's exact values per feedback: the text was sitting too
+        // close to the brand list and needed to read larger.
+        indent: { left: 2300 },
         spacing: { before: 0, after: 0 },
         children: [
           new ImageRun({
@@ -334,7 +385,7 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
               wrap: { type: TextWrappingType.NONE },
             },
           }),
-          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '999999' }),
+          new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 16, color: '999999' }),
         ],
       }),
     ],
