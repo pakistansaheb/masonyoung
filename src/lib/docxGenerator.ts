@@ -28,6 +28,7 @@ import {
   MARKETING_COSTS_ROWS,
   MARKETING_INTRO,
   MARKETING_OUTRO,
+  MASON_YOUNG_BRAND_LINES,
 } from './letterBoilerplate'
 import {
   reLine,
@@ -146,11 +147,13 @@ function marketingTable(): Table {
   })
 }
 
+const LETTERHEAD_SIZE = 14 // half-points; 14 = 7pt — the real letterhead's exact size, smaller than 10pt body text
+
 function rightAlignedLine(text: string): Paragraph {
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
     spacing: { before: 0, after: 0 },
-    children: [new TextRun({ text, font: FONT, size: SIZE })],
+    children: [new TextRun({ text, font: FONT, size: LETTERHEAD_SIZE })],
   })
 }
 
@@ -166,9 +169,11 @@ function letterheadAddressBlock(): Paragraph[] {
 }
 
 function logoParagraph(): Paragraph {
+  // Exact size from the real letterhead: 82x90pt (portrait) — was
+  // previously 90x74 (landscape), the wrong aspect ratio entirely.
   return new Paragraph({
     alignment: AlignmentType.RIGHT,
-    children: [new ImageRun({ data: base64ToBytes(MASON_YOUNG_LOGO_BASE64), transformation: { width: 90, height: 74 }, type: 'jpg' })],
+    children: [new ImageRun({ data: base64ToBytes(MASON_YOUNG_LOGO_BASE64), transformation: { width: 82, height: 90 }, type: 'jpg' })],
   })
 }
 
@@ -241,10 +246,44 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
 
   const footer = new Footer({
     children: [
-      new Paragraph({
-        border: { top: { style: BorderStyle.SINGLE, size: 4, color: RED } },
-        spacing: { before: 100 },
-        children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          bottom: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          left: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          right: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          insideHorizontal: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+          insideVertical: { style: BorderStyle.NONE, size: 0, color: 'auto' },
+        },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 22, type: WidthType.PERCENTAGE },
+                children: MASON_YOUNG_BRAND_LINES.map(
+                  label =>
+                    new Paragraph({
+                      spacing: { before: 0, after: 0 },
+                      children: [
+                        new TextRun({ text: '■ ', font: FONT, size: 12, color: RED }),
+                        new TextRun({ text: label, font: FONT, size: 12, color: RED, bold: true }),
+                      ],
+                    })
+                ),
+              }),
+              new TableCell({
+                width: { size: 78, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    spacing: { before: 0, after: 0 },
+                    children: [new TextRun({ text: LETTERHEAD.regLine, font: FONT, size: 12, color: '888888' })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
       }),
     ],
   })
