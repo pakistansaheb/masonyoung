@@ -21,11 +21,13 @@ export default async function handler(req: Request): Promise<Response> {
     form.append('apikey', apiKey)
     form.append('language', 'eng')
     form.append('OCREngine', '2')
+    form.append('isOverlayRequired', 'true')
     form.append('file', new Blob([bytes], { type: contentType }), filename)
 
     const res = await fetch('https://api.ocr.space/parse/image', {
       method: 'POST',
       body: form,
+      signal: AbortSignal.timeout(25000),
     })
 
     if (!res.ok) {
@@ -36,7 +38,7 @@ export default async function handler(req: Request): Promise<Response> {
     const json = (await res.json()) as {
       IsErroredOnProcessing?: boolean
       ErrorMessage?: string[] | string
-      ParsedResults?: { ParsedText: string }[]
+      ParsedResults?: { ParsedText: string; TextOverlay?: { Lines?: Line[] } }[]
     }
 
     if (json.IsErroredOnProcessing) {
@@ -44,7 +46,7 @@ export default async function handler(req: Request): Promise<Response> {
       throw new Error(msg || 'OCR.space failed to process the image')
     }
 
-    const text = json.ParsedResults?.map(r => r.ParsedText).join('\n').trim() ?? ''
+    const text = extractNotesFromOverlay(json.ParsedResults ?? [])
 
     return new Response(JSON.stringify({ text }), {
       status: 200,
@@ -53,5 +55,55 @@ export default async function handler(req: Request): Promise<Response> {
   } catch (err) {
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'OCR failed' }), { status: 502 })
   }
+}
+
+interface Word {
+  WordText: string
+  Left: number
+  Top: number
+  Width: number
+}
+interface Line {
+  LineText: string
+  Words: Word[]
+}
+interface ParsedResult {
+  ParsedText: string
+  TextOverlay?: { Lines?: Line[] }
+}
+
+/**
+ * Floor plan notes are conventionally handwritten/typed in a column down
+ * the left margin of the sheet, separate from the dimension labels and
+ * room names scattered across the drawing itself. Using the OCR overlay's
+ * word positions, this isolates lines whose leftmost word sits in roughly
+ * the left third of the page and returns those preferentially — falling
+ * back to the full parsed text if position data isn't available or
+ * nothing was found in that margin.
+ */
+function extractNotesFromOverlay(results: ParsedResult[]): string {
+  const allLines = results.flatMap(r => r.TextOverlay?.Lines ?? [])
+  const fullText = results.map(r => r.ParsedText).join('\n').trim()
+
+  if (allLines.length === 0) return fullText
+
+  let pageWidth = 0
+  for (const line of allLines) {
+    for (const w of line.Words) pageWidth = Math.max(pageWidth, w.Left + w.Width)
+  }
+  if (pageWidth === 0) return fullText
+
+  const leftThreshold = pageWidth * 0.35
+  const marginLines = allLines
+    .map(line => ({
+      text: line.LineText,
+      top: Math.min(...line.Words.map(w => w.Top)),
+      left: Math.min(...line.Words.map(w => w.Left)),
+    }))
+    .filter(l => l.left < leftThreshold && l.text.trim())
+    .sort((a, b) => a.top - b.top)
+    .map(l => l.text.trim())
+
+  return marginLines.length > 0 ? marginLines.join('\n') : fullText
 }
 

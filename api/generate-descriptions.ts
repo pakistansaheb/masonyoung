@@ -26,7 +26,7 @@ Rules, strictly followed:
 - Do not compliment the property. Purely describe the property and what it benefits from.
 - Do not mention businesses being successful or similar commentary.
 - Cover, in this exact order: (1) how the property is situated/constructed — a building-type and construction sentence that MUST include the roof type (e.g. "the property comprises of an end terrace two storey building of brick built construction surmounted by a pitched tiled roof"), (2) how it is set out internally, benefits listed from the ground up: floor, walls, then ceiling/lighting, then fixtures (kitchen, WCs, etc.), (3) what it benefits from externally.
-- Weave in the surveyor's on-site notes provided as the specific benefits/fixtures for that property — treat them as things this property consists of.
+- The surveyor's on-site notes are the primary source of truth for this description — every distinct item mentioned in them (each floor finish, wall type, light fitting, fixture, external feature) MUST be reflected somewhere in the description. Do not skip or summarise away anything listed in the notes.
 - CRITICAL: only state specific fixtures, materials, or construction details that are either given in the surveyor's notes or are safe, generic defaults (e.g. "plastered and painted walls"). Never invent a specific detail (an exact roof type, a specific fixture) that isn't supported by the notes — if the notes don't mention it, describe that aspect only in general terms or leave it out rather than guessing.
 - Write it as continuous prose (3-5 sentences), not a list.
 - Output ONLY the property description text, nothing else — no preamble, no heading.
