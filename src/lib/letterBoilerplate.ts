@@ -12,7 +12,7 @@ export const LETTERHEAD = {
 }
 
 export const SIGNATURE = {
-  name: 'Arjamand Farooqui',
+  name: 'Arjamand Farooqui BSc (HONS) Est Man',
   title: 'Director',
   team: 'Business Space',
   company: 'Mason Young Property Consultants',
