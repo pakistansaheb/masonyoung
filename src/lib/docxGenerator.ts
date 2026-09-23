@@ -72,11 +72,13 @@ const FOOTER_DISTANCE_TWIPS = 708
 const TWIP_TO_EMU = 635
 // Bumped up from the real letterhead's exact 82x90pt — the user asked for
 // the logo and the address/contact text under it to be bigger than a
-// literal match.
-const LOGO_WIDTH_PT = 111
-const LOGO_HEIGHT_PT = 122
-const ADDRESS_BLOCK_WIDTH_PT = 195
-const ADDRESS_BLOCK_HEIGHT_PT = 104
+// literal match — reverted: making both bigger required a large artificial
+// gap before the body could start (to avoid the header colliding with the
+// opening paragraph), which looked far worse than matching the template.
+const LOGO_WIDTH_PT = 82
+const LOGO_HEIGHT_PT = 90
+const ADDRESS_BLOCK_WIDTH_PT = 150
+const ADDRESS_BLOCK_HEIGHT_PT = 81
 
 function ordinalSuffix(day: number): string {
   if (day >= 11 && day <= 13) return 'th'
@@ -185,7 +187,7 @@ function marketingTable(): Table {
 }
 
 // The address/contact block, pre-rendered to a single image (right-aligned
-// Arial 9pt, 195x104pt at 1:1 scale). This is a deliberate departure from
+// Arial 7pt, 150x81pt at 1:1 scale). This is a deliberate departure from
 // the real letterhead's raw XML, where these lines are plain text
 // paragraphs: in THIS renderer, plain in-flow text paragraphs in the
 // header — even ones matching the real file's structure paragraph-for-
@@ -256,8 +258,10 @@ function logoParagraph(): Paragraph {
   })
 }
 
-// Arjamand's real signature, floated over the "Yours sincerely" paragraph —
-// offsets and size (90x47pt) taken from the real letterhead's own body XML.
+// Arjamand's real signature, floated just below the "Yours sincerely" line
+// it's anchored to (114300 EMU horizontal offset from the real letterhead's
+// body XML; the vertical offset is enlarged from the real file's 116840 so
+// it clears the "Yours sincerely" text instead of overlapping it).
 function signatureImageRun(): ImageRun {
   return new ImageRun({
     data: base64ToBytes(SIGNATURE_BASE64),
@@ -265,7 +269,7 @@ function signatureImageRun(): ImageRun {
     type: 'png',
     floating: {
       horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: 114300 },
-      verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: 116840 },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: 260000 },
       allowOverlap: true,
       behindDocument: false,
       wrap: { type: TextWrappingType.NONE },
@@ -278,16 +282,6 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   const recipientAddress = (d.clientAddress.trim() || d.address).split(',').map(l => l.trim()).filter(Boolean)
 
   const bodySections: (Paragraph | Table)[] = []
-
-  // The logo + address block together are taller than the top margin, so
-  // page 1 needs extra clearance before the body starts, or the opening
-  // lines run straight through the address/contact text. Blank lines
-  // (rather than a bigger section margin) keep this a page-1-only effect —
-  // a bigger margin would needlessly push continuation pages down too.
-  const headerHeightTwips = (LOGO_HEIGHT_PT + ADDRESS_BLOCK_HEIGHT_PT) * 20
-  const clearanceNeededTwips = Math.max(0, headerHeightTwips - MARGIN_TOP_TWIPS)
-  const clearanceLines = Math.ceil(clearanceNeededTwips / (SIZE / 2 + 4) / 20)
-  for (let i = 0; i < clearanceLines; i++) bodySections.push(blank())
 
   // Date, then the recipient's name and address, matching Mason Young's
   // standard letter opening.
