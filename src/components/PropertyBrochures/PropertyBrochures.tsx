@@ -8,6 +8,7 @@ import { generateBrochureDocx, downloadBrochureDocx } from '../../lib/brochureGe
 import { computeRatesPayable, formatCurrency } from '../../lib/brochureBoilerplate'
 import { ocrFloorPlan } from '../../lib/ocr'
 import { extractAreaTotals } from '../../lib/areaExtract'
+import { extractRateableValue } from '../../lib/rateableValueExtract'
 import { isSpreadsheetFile, extractFloorSchedule, type FloorArea } from '../../lib/spreadsheet'
 
 const DISPOSAL_OPTIONS: { key: BrochureDisposalType; title: string; desc: string }[] = [
@@ -78,6 +79,7 @@ export default function PropertyBrochures() {
       const otherFloors = Object.entries(floors).filter(([label]) => !knownFloors.has(label))
       const otherSqFt = otherFloors.reduce((sum, [, a]) => (a.sqFt !== null ? sum + a.sqFt : sum), 0)
       const otherSqM = otherFloors.reduce((sum, [, a]) => (a.sqM !== null ? sum + a.sqM : sum), 0)
+      const rv = extractRateableValue(ocrText)
 
       setData(prev => ({
         ...prev,
@@ -92,6 +94,8 @@ export default function PropertyBrochures() {
         secondFloorSqM: floors['Second Floor']?.sqM != null ? String(floors['Second Floor'].sqM) : prev.secondFloorSqM,
         otherFloorSqFt: otherSqFt ? String(otherSqFt) : prev.otherFloorSqFt,
         otherFloorSqM: otherSqM ? String(otherSqM) : prev.otherFloorSqM,
+        rateableValue: rv.rateableValue ?? prev.rateableValue,
+        ratingYear: rv.ratingYear ?? prev.ratingYear,
       }))
     } catch (err) {
       setOcrError(err instanceof Error ? err.message : 'Could not read the attachment — fill in the areas and description manually.')
@@ -270,7 +274,7 @@ export default function PropertyBrochures() {
             value={data.rateableValue}
             onChange={v => set('rateableValue', v)}
             placeholder="13,500"
-            hint="Read this off the attached RV document."
+            hint="Auto-filled if the attached report mentions it — check it's right, or enter it manually."
           />
         </div>
         {ratesPayable !== null && (
