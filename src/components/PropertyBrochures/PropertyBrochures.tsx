@@ -48,42 +48,59 @@ export default function PropertyBrochures() {
   }
 
   // Same auto-calculation as Property Reports, broadened to also accept a
-  // full report (PDF) rather than only a floor plan drawing: a floor plan
-  // image's notes are read from its side margin (isolating handwritten
-  // notes from the drawing itself), while a PDF report is normal flowing
-  // text read in full and summarised by the AI into the property
-  // description — either way, whatever text comes back also gets scanned
-  // for area figures to auto-fill the ACCOMMODATION table.
-  async function onFloorPlanChosen(file: File | null) {
-    set('floorPlanFile', file)
-    if (!file) return
-    const isImage = file.type.startsWith('image/')
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    const isSpreadsheet = isSpreadsheetFile(file)
-    if (!isImage && !isPdf && !isSpreadsheet) return
+  // full report (PDF) rather than only a floor plan drawing, AND to accept
+  // several attachments at once (a floor plan, a general report, an RV/
+  // business rates notice — whatever's available). Each attachment's text
+  // is read (a floor plan image's notes from its side margin, a PDF report
+  // in full), scanned for area figures and a Rateable Value, and appended
+  // into the combined Property Notes field below — which is what actually
+  // drives the AI property description, and stays visible/editable so it's
+  // clear exactly what's feeding it.
+  async function onFilesChosen(fileList: FileList | null) {
+    const files = Array.from(fileList ?? [])
+    if (!files.length) return
+    if (!data.floorPlanFile) set('floorPlanFile', files.find(f => f.type.startsWith('image/')) ?? files[0])
 
     setOcrError('')
     setOcrRunning(true)
     try {
-      const ocrText = isImage ? await ocrFloorPlan(file) : isPdf ? await ocrFloorPlan(file, 'report') : ''
-      const schedule = isSpreadsheet ? await extractFloorSchedule(file) : null
+      let combinedNotes = ''
+      let sqFt: number | null = null
+      let sqM: number | null = null
+      let floors: Record<string, FloorArea> = {}
+      let rateableValue: string | null = null
+      let ratingYear: string | null = null
 
-      const scheduleSqFt = schedule?.totalSqFt ?? null
-      const scheduleSqM = schedule?.totalSqM ?? null
-      const ocrTotals = extractAreaTotals(ocrText)
-      const sqFt = scheduleSqFt ?? ocrTotals.totalSqFt
-      const sqM = scheduleSqM ?? ocrTotals.totalSqM
+      for (const file of files) {
+        const isImage = file.type.startsWith('image/')
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+        const isSpreadsheet = isSpreadsheetFile(file)
+        if (!isImage && !isPdf && !isSpreadsheet) continue
 
-      const floors: Record<string, FloorArea> = schedule?.floors ?? {}
+        const ocrText = isImage ? await ocrFloorPlan(file) : isPdf ? await ocrFloorPlan(file, 'report') : ''
+        if (ocrText.trim()) {
+          combinedNotes += (combinedNotes ? '\n\n' : '') + ocrText.trim()
+        }
+        const schedule = isSpreadsheet ? await extractFloorSchedule(file) : null
+        const totals = extractAreaTotals(ocrText)
+        if (schedule?.totalSqFt != null) sqFt = schedule.totalSqFt
+        else if (sqFt === null && totals.totalSqFt !== null) sqFt = totals.totalSqFt
+        if (schedule?.totalSqM != null) sqM = schedule.totalSqM
+        else if (sqM === null && totals.totalSqM !== null) sqM = totals.totalSqM
+        if (schedule?.floors) floors = { ...floors, ...schedule.floors }
+        const rv = extractRateableValue(ocrText)
+        if (rv.rateableValue) rateableValue = rv.rateableValue
+        if (rv.ratingYear) ratingYear = rv.ratingYear
+      }
+
       const knownFloors = new Set(['Ground Floor', 'First Floor', 'Second Floor'])
       const otherFloors = Object.entries(floors).filter(([label]) => !knownFloors.has(label))
       const otherSqFt = otherFloors.reduce((sum, [, a]) => (a.sqFt !== null ? sum + a.sqFt : sum), 0)
       const otherSqM = otherFloors.reduce((sum, [, a]) => (a.sqM !== null ? sum + a.sqM : sum), 0)
-      const rv = extractRateableValue(ocrText)
 
       setData(prev => ({
         ...prev,
-        floorPlanNotes: ocrText || prev.floorPlanNotes,
+        floorPlanNotes: combinedNotes ? (prev.floorPlanNotes ? `${prev.floorPlanNotes}\n\n${combinedNotes}` : combinedNotes) : prev.floorPlanNotes,
         totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
         totalSqM: sqM !== null ? String(sqM) : prev.totalSqM,
         groundFloorSqFt: floors['Ground Floor']?.sqFt != null ? String(floors['Ground Floor'].sqFt) : prev.groundFloorSqFt,
@@ -94,11 +111,11 @@ export default function PropertyBrochures() {
         secondFloorSqM: floors['Second Floor']?.sqM != null ? String(floors['Second Floor'].sqM) : prev.secondFloorSqM,
         otherFloorSqFt: otherSqFt ? String(otherSqFt) : prev.otherFloorSqFt,
         otherFloorSqM: otherSqM ? String(otherSqM) : prev.otherFloorSqM,
-        rateableValue: rv.rateableValue ?? prev.rateableValue,
-        ratingYear: rv.ratingYear ?? prev.ratingYear,
+        rateableValue: rateableValue ?? prev.rateableValue,
+        ratingYear: ratingYear ?? prev.ratingYear,
       }))
     } catch (err) {
-      setOcrError(err instanceof Error ? err.message : 'Could not read the attachment — fill in the areas and description manually.')
+      setOcrError(err instanceof Error ? err.message : 'Could not read one of the attachments — fill in the areas and notes manually.')
     } finally {
       setOcrRunning(false)
     }
@@ -175,27 +192,29 @@ export default function PropertyBrochures() {
       <StepCard number={3} title="Accommodation">
         <label className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:border-gray-400 font-semibold rounded-md px-4 py-3 cursor-pointer text-sm mb-2">
           <Upload size={18} />
-          {data.floorPlanFile ? data.floorPlanFile.name : 'Attach floor plan or report'}
+          {data.floorPlanFile ? data.floorPlanFile.name : 'Attach floor plan, report or RV notice'}
           <input
             type="file"
             accept="image/*,.pdf,.xlsx,.xls,.csv"
+            multiple
             className="hidden"
-            onChange={e => onFloorPlanChosen(e.target.files?.[0] ?? null)}
+            onChange={e => onFilesChosen(e.target.files)}
           />
         </label>
         <p className="text-xs text-gray-400 mb-3">
-          Doesn't have to be a floor plan — a full report (PDF) works too. Areas below are read automatically (image, PDF or
-          spreadsheet), and its text is summarised into the Property Description in Step 4. If it's an image it's also
+          Attach as many as you have at once — a floor plan, a full report, a Rateable Value/business rates notice — any mix of
+          image, PDF or spreadsheet. Areas and Rateable Value below are read automatically from all of them, and their text is
+          combined into Property Notes below, which drives the AI Property Description in Step 4. Image attachments are also
           embedded into the back-page gallery.
         </p>
         {ocrRunning && (
           <p className="flex items-center gap-2 text-xs text-gray-500 mb-3">
-            <Loader2 size={14} className="animate-spin" /> Reading the floor plan…
+            <Loader2 size={14} className="animate-spin" /> Reading the attachments…
           </p>
         )}
         {ocrError && <p className="text-xs text-amber-700 mb-3">{ocrError}</p>}
 
-        <div className="grid sm:grid-cols-2 gap-x-4">
+        <div className="grid sm:grid-cols-2 gap-x-4 mb-4">
           <TextField label="Ground floor (sq ft)" value={data.groundFloorSqFt} onChange={v => set('groundFloorSqFt', v)} />
           <TextField label="Ground floor (sq m)" value={data.groundFloorSqM} onChange={v => set('groundFloorSqM', v)} />
           <TextField label="First floor (sq ft)" value={data.firstFloorSqFt} onChange={v => set('firstFloorSqFt', v)} />
@@ -207,6 +226,14 @@ export default function PropertyBrochures() {
           <TextField label="Total (sq ft)" value={data.totalSqFt} onChange={v => set('totalSqFt', v)} />
           <TextField label="Total (sq m)" value={data.totalSqM} onChange={v => set('totalSqM', v)} />
         </div>
+
+        <TextAreaField
+          label="Property Notes"
+          value={data.floorPlanNotes}
+          onChange={v => set('floorPlanNotes', v)}
+          rows={6}
+          hint="Text read off the attachments above — edit or add to it freely. This is what the AI Property Description in Step 4 is written from, so anything worth describing (construction, fixtures, condition) should be in here."
+        />
       </StepCard>
 
       <StepCard number={4} title="Location & Property Descriptions">
