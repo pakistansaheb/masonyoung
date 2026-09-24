@@ -1,14 +1,16 @@
 import { useState } from 'react'
-import { Phone, Ruler, FileText, Settings } from 'lucide-react'
+import { Phone, Ruler, FileText, Image, Settings } from 'lucide-react'
 import { MASON_YOUNG_LOGO_BASE64 } from './assets/logoBase64'
 import PropertyReports from './components/PropertyReports/PropertyReports'
+import PropertyBrochures from './components/PropertyBrochures/PropertyBrochures'
 
-type Tab = 'enquiries' | 'floorplans' | 'reports'
+type Tab = 'enquiries' | 'floorplans' | 'reports' | 'brochures'
 
 const TABS: { id: Tab; label: string; icon: typeof Phone }[] = [
   { id: 'enquiries', label: 'Enquiries', icon: Phone },
   { id: 'floorplans', label: 'Floor Plans', icon: Ruler },
   { id: 'reports', label: 'Property Reports', icon: FileText },
+  { id: 'brochures', label: 'Property Brochures', icon: Image },
 ]
 
 function Placeholder({ name }: { name: string }) {
@@ -63,6 +65,7 @@ export default function App() {
         {tab === 'enquiries' && <Placeholder name="Enquiries" />}
         {tab === 'floorplans' && <Placeholder name="Floor Plans" />}
         {tab === 'reports' && <PropertyReports />}
+        {tab === 'brochures' && <PropertyBrochures />}
       </main>
 
       <footer className="text-center text-xs text-gray-400 pb-6">
