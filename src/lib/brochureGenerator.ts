@@ -19,7 +19,21 @@ import {
 } from 'docx'
 import { saveAs } from 'file-saver'
 import type { BrochureData } from '../components/PropertyBrochures/types'
-import { BROCHURE_HEADING, BROCHURE_RATE_COLUMN_LABEL, BROCHURE_DISCLAIMER, computeRatesPayable } from './brochureBoilerplate'
+import {
+  BROCHURE_HEADING,
+  BROCHURE_DISCLAIMER,
+  PLANNING_TEXT,
+  SERVICES_TEXT,
+  EPC_TEXT,
+  BUILDING_INSURANCE_TEXT,
+  MONEY_LAUNDERING_TEXT,
+  VAT_TEXT,
+  LEGAL_COSTS_TEXT,
+  VIEWING_TEXT,
+  CONTACT_DETAILS_LINES,
+  computeRatesPayable,
+  formatCurrency,
+} from './brochureBoilerplate'
 import { BROCHURE_FRONT_LOGO_BASE64 } from '../assets/brochureFrontLogoBase64'
 import { BROCHURE_BACK_LOGO_BASE64 } from '../assets/brochureBackLogoBase64'
 
@@ -27,7 +41,9 @@ const FONT = 'Century Gothic'
 
 // A4, zero margins — matches every real Mason Young brochure exactly
 // (confirmed from the raw XML: <w:pgMar top="0" right="0" bottom="0" left="0".../>).
-// Everything on the page is absolutely positioned.
+// Everything on the cover page is absolutely positioned; the body
+// sections below it are normal flowing paragraphs, same as the reports
+// letter, with the photo gallery floating down the right-hand column.
 const PAGE_WIDTH_TWIPS = 11906
 const PAGE_HEIGHT_TWIPS = 16838
 const PAGE_WIDTH_PT = 595.3
@@ -128,10 +144,13 @@ function floatingImageParagraph(opts: {
   })
 }
 
+function withCommas(value: string): string {
+  const n = Number(value.replace(/,/g, ''))
+  return Number.isFinite(n) ? n.toLocaleString('en-GB') : value
+}
+
 export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blob; filename: string }> {
   const heading = BROCHURE_HEADING[d.disposalType]
-  const rateLabel = BROCHURE_RATE_COLUMN_LABEL[d.disposalType]
-  const ratesPayable = computeRatesPayable(d.rateableValue)
 
   const logoBytes = base64ToBytes(BROCHURE_FRONT_LOGO_BASE64)
   const backLogoBytes = base64ToBytes(BROCHURE_BACK_LOGO_BASE64)
@@ -214,8 +233,11 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   )
   y += 70
 
-  // --- Sq ft line ---
-  if (d.sqFtText.trim()) {
+  // --- Sq ft line, computed from the ACCOMMODATION figures below (same
+  // as the reports' totalSqFt/totalSqM — auto-filled from an attached
+  // floor plan where possible) ---
+  const sqFtLine = d.totalSqFt ? `${withCommas(d.totalSqFt)} SQ FT${d.totalSqM ? ` (${withCommas(d.totalSqM)} SQ M)` : ''}` : ''
+  if (sqFtLine) {
     children.push(
       ...framedParagraph({
         x: 0,
@@ -226,7 +248,7 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
           {
             alignment: AlignmentType.CENTER,
             spacing: { before: 0, after: 0 },
-            children: [new TextRun({ text: d.sqFtText.toUpperCase(), font: FONT, bold: true, color: 'FF0000', size: 48 })],
+            children: [new TextRun({ text: sqFtLine, font: FONT, bold: true, color: 'FF0000', size: 48 })],
           },
         ],
       })
@@ -315,7 +337,7 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
     })
   )
 
-  // LOCATION heading + text, framed at a fixed position below the bullets.
+  // LOCATION heading, framed at a fixed position below the bullets.
   // (A normal-flow paragraph here rendered near the TOP of the page instead
   // — framed paragraphs don't advance the normal flow cursor by their
   // visual frame height, only their own single natural text line, so any
@@ -337,17 +359,44 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   )
   children.push(new Paragraph({ children: [new PageBreak()] }))
 
-  // Location text continues at the top of page 2 — the contact block on
-  // page 1 already runs to within ~18pt of the page edge, leaving no room
-  // for the paragraph itself (matches how the real templates let this
-  // section's text frame run onto the back page too).
+  // --- Page 2 onward: the real template's full section list, in order,
+  // matching the blank FH/LH/LFS templates exactly. Gallery photos float
+  // down the right-hand column alongside this text, the same technique as
+  // the cover's floating images.
   children.push(...bodyParagraphs(d.locationDescription))
-
-  // --- Page 2: DESCRIPTION ---
   children.push(sectionHeading('DESCRIPTION'))
   children.push(...bodyParagraphs(d.propertyDescription))
+  children.push(sectionHeading('ACCOMMODATION'))
+  children.push(new Paragraph({ spacing: { before: 0, after: 0 }, children: [] }))
+  children.push(accommodationTable(d))
+  children.push(new Paragraph({ spacing: { before: 0, after: 0 }, children: [] }))
+  children.push(sectionHeading('PLANNING'))
+  children.push(...bodyParagraphs(PLANNING_TEXT))
+  children.push(sectionHeading('SERVICES'))
+  children.push(...bodyParagraphs(SERVICES_TEXT))
+  children.push(sectionHeading('ENERGY PERFORMANCE CERTIFICATES'))
+  children.push(...bodyParagraphs(EPC_TEXT))
+  children.push(sectionHeading(tenureHeading(d)))
+  children.push(...bodyParagraphs(tenureText(d)))
+  children.push(sectionHeading('BUSINESS RATES'))
+  children.push(...bodyParagraphs(businessRatesText(d)))
+  if (d.disposalType === 'leasehold') {
+    children.push(sectionHeading('BUILDING INSURANCE'))
+    children.push(...bodyParagraphs(BUILDING_INSURANCE_TEXT))
+  }
+  children.push(sectionHeading('MONEY LAUNDERING'))
+  children.push(...bodyParagraphs(MONEY_LAUNDERING_TEXT))
+  children.push(sectionHeading('VAT'))
+  children.push(...bodyParagraphs(VAT_TEXT))
+  children.push(sectionHeading('LEGAL COSTS'))
+  children.push(...bodyParagraphs(LEGAL_COSTS_TEXT))
+  children.push(sectionHeading('VIEWING'))
+  children.push(...bodyParagraphs(VIEWING_TEXT))
+  children.push(sectionHeading('CONTACT DETAILS'))
+  children.push(...bodyParagraphs(CONTACT_DETAILS_LINES.join('\n')))
 
-  // --- Right-hand gallery column: 7.55cm tall, black border, 10pt gaps ---
+  // --- Right-hand gallery column: 7.55cm tall, black border, 10pt gaps,
+  // floating down the page from the top of page 2 alongside the text ---
   const galleryHeightPt = 7.55 * CM_TO_PT
   const galleryX = PAGE_WIDTH_PT - 300
   let galleryY = 20
@@ -360,8 +409,6 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
     galleryY += galleryHeightPt + 10
   }
 
-  children.push(new Paragraph({ spacing: { before: Math.round(20 * PT_TO_TWIP), after: 0 }, children: [] }))
-  children.push(availabilityTable(d, rateLabel, ratesPayable))
   children.push(new Paragraph({ spacing: { before: Math.round(30 * PT_TO_TWIP), after: 0 }, children: [] }))
 
   // --- Back logo + disclaimer (normal flow, not framed — the frame
@@ -400,8 +447,18 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   return { blob, filename }
 }
 
+// Body text on page 2+ is normal-flow, full page width by default — but
+// the photo gallery floats down the right-hand column with wrap:NONE (no
+// text wrapping), so without a right indent every line runs straight
+// through/behind the photos. A right indent keeps text inside the left
+// column, clear of the gallery, matching how the real templates read
+// (LOCATION/DESCRIPTION/etc. text visibly stops short of the photos).
+const BODY_LEFT_INDENT_TWIPS = 12 * PT_TO_TWIP
+const BODY_RIGHT_INDENT_TWIPS = (PAGE_WIDTH_PT - (PAGE_WIDTH_PT - 300) + 10) * PT_TO_TWIP
+
 function sectionHeading(text: string): Paragraph {
   return new Paragraph({
+    indent: { left: BODY_LEFT_INDENT_TWIPS, right: BODY_RIGHT_INDENT_TWIPS },
     spacing: { before: 0, after: 0 },
     children: [new TextRun({ text, font: FONT, bold: true, size: 16, underline: { type: 'thick', color: 'FF0000' } })],
   })
@@ -409,46 +466,90 @@ function sectionHeading(text: string): Paragraph {
 
 function bodyParagraphs(text: string): Paragraph[] {
   if (!text.trim()) return [new Paragraph({ spacing: { before: 0, after: 0 }, children: [] })]
-  return [
-    new Paragraph({ spacing: { before: 0, after: 0 }, children: [] }),
-    new Paragraph({
-      alignment: AlignmentType.BOTH,
-      spacing: { before: 0, after: 0 },
-      children: [new TextRun({ text, font: FONT, size: 15 })],
-    }),
-    new Paragraph({ spacing: { before: 0, after: 0 }, children: [] }),
-  ]
+  const lines = text.split('\n')
+  const out: Paragraph[] = [new Paragraph({ spacing: { before: 0, after: 0 }, children: [] })]
+  for (const line of lines) {
+    out.push(
+      new Paragraph({
+        alignment: AlignmentType.BOTH,
+        indent: { left: BODY_LEFT_INDENT_TWIPS, right: BODY_RIGHT_INDENT_TWIPS },
+        spacing: { before: 0, after: 0 },
+        children: [new TextRun({ text: line, font: FONT, size: 15 })],
+      })
+    )
+  }
+  out.push(new Paragraph({ spacing: { before: 0, after: 0 }, children: [] }))
+  return out
 }
 
-function availabilityTable(d: BrochureData, rateLabel: string, ratesPayable: string | null): Table {
+// ACCOMMODATION table — matches the real templates exactly: AREA / SQ FT /
+// SQ M, one row per floor that has a figure, a TOTAL row. Not a rent/RV
+// table — that information lives in its own TENURE and BUSINESS RATES
+// sections below, as real Word text (not table cells), same as the
+// exemplars.
+function accommodationTable(d: BrochureData): Table {
   const darkBorder = { style: BorderStyle.SINGLE, size: 4, color: '000000' }
-  const headerRow = ['ADDRESS', rateLabel, 'RATEABLE VALUE', 'RATES PAYABLE (PA)']
-  const dataRow = [d.address || '-', d.priceOrRent || '-', d.rateableValue ? `£${d.rateableValue}` : '-', ratesPayable ?? '-']
+  const rows: [string, string, string][] = [
+    ['Ground Floor', d.groundFloorSqFt, d.groundFloorSqM],
+    ['First Floor', d.firstFloorSqFt, d.firstFloorSqM],
+    ['Second Floor', d.secondFloorSqFt, d.secondFloorSqM],
+    ['Other', d.otherFloorSqFt, d.otherFloorSqM],
+  ].filter(([, sqFt]) => sqFt.trim()) as [string, string, string][]
+  rows.push(['TOTAL', d.totalSqFt, d.totalSqM])
+
+  const cell = (text: string, opts: { bold?: boolean; color?: string } = {}) =>
+    new TableCell({
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text, font: FONT, size: 16, bold: opts.bold, color: opts.color })],
+        }),
+      ],
+    })
+
   return new Table({
-    // Narrower than full width, left-aligned — the right-hand column of
-    // the page is reserved for the floating photo gallery.
     width: { size: 5300, type: WidthType.DXA },
     alignment: AlignmentType.LEFT,
     borders: { top: darkBorder, bottom: darkBorder, left: darkBorder, right: darkBorder, insideHorizontal: darkBorder, insideVertical: darkBorder },
     rows: [
-      new TableRow({
-        children: headerRow.map(
-          h =>
-            new TableCell({
-              children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: h, bold: true, color: 'FF0000', font: FONT, size: 16 })] })],
-            })
-        ),
-      }),
-      new TableRow({
-        children: dataRow.map(
-          v =>
-            new TableCell({
-              children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: v, font: FONT, size: 16 })] })],
-            })
-        ),
-      }),
+      new TableRow({ children: [cell('AREA', { bold: true }), cell('SQ FT', { bold: true }), cell('SQ M', { bold: true })] }),
+      ...rows.map(
+        ([label, sqFt, sqM]) =>
+          new TableRow({
+            children: [
+              cell(label, { bold: label === 'TOTAL' }),
+              cell(sqFt ? withCommas(sqFt) : '-', { bold: label === 'TOTAL' }),
+              cell(sqM ? withCommas(sqM) : '-', { bold: label === 'TOTAL' }),
+            ],
+          })
+      ),
     ],
   })
+}
+
+function tenureHeading(d: BrochureData): string {
+  if (d.disposalType === 'freehold') return 'TENURE/PRICE'
+  if (d.disposalType === 'leasehold') return 'TENURE/RENT'
+  return 'LEASE DETAILS'
+}
+
+function tenureText(d: BrochureData): string {
+  if (d.disposalType === 'freehold') {
+    return `The freehold interest is available at a quoting price of £${d.quotingPrice || '[PRICE]'} subject to contract.`
+  }
+  if (d.disposalType === 'leasehold') {
+    return `The property is available on a leasehold basis at a quoting rent of £${d.quotingRent || '[RENT]'} per annum exclusive, subject to contract. Terms to be agreed.`
+  }
+  const leaseDetails = `The property is let on a ${d.leaseTermYears || '[XX]'} year lease with effect from ${d.leaseStartDate || '[DATE]'} at a passing rent of £${d.quotingRent || '[RENT]'} per annum.`
+  const priceDetails = `A premium of £${d.premium || '[PREMIUM]'} is sought in respect of the fixtures and fittings. Stock at value. Further details are available upon request.`
+  return `${leaseDetails}\n${priceDetails}`
+}
+
+function businessRatesText(d: BrochureData): string {
+  const rates = computeRatesPayable(d.rateableValue)
+  return `The property is currently listed within the ${d.ratingYear} rating listing as having a rateable value of £${d.rateableValue || '[RV]'}. Rates payable will be in the region of ${
+    rates !== null ? formatCurrency(rates) : '[RATES]'
+  } per annum. Interested parties are advised to make their own enquiries to Birmingham City Council on 0121 303 5511.`
 }
 
 export function downloadBrochureDocx(blob: Blob, filename: string): void {

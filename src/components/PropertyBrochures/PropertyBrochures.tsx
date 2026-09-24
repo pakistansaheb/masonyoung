@@ -5,7 +5,10 @@ import { TextField, TextAreaField } from '../PropertyReports/fields'
 import { BLANK_BROCHURE, BULLET_SUGGESTIONS, type BrochureData, type BrochureDisposalType } from './types'
 import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateBrochureDocx, downloadBrochureDocx } from '../../lib/brochureGenerator'
-import { computeRatesPayable } from '../../lib/brochureBoilerplate'
+import { computeRatesPayable, formatCurrency } from '../../lib/brochureBoilerplate'
+import { ocrFloorPlan } from '../../lib/ocr'
+import { extractAreaTotals } from '../../lib/areaExtract'
+import { isSpreadsheetFile, extractFloorSchedule, type FloorArea } from '../../lib/spreadsheet'
 
 const DISPOSAL_OPTIONS: { key: BrochureDisposalType; title: string; desc: string }[] = [
   { key: 'freehold', title: 'For Sale', desc: 'Freehold disposal' },
@@ -18,6 +21,8 @@ export default function PropertyBrochures() {
   const [generating, setGenerating] = useState(false)
   const [aiError, setAiError] = useState('')
   const [building, setBuilding] = useState(false)
+  const [ocrRunning, setOcrRunning] = useState(false)
+  const [ocrError, setOcrError] = useState('')
 
   function set<K extends keyof BrochureData>(key: K, value: BrochureData[K]) {
     setData(prev => ({ ...prev, [key]: value }))
@@ -39,6 +44,54 @@ export default function PropertyBrochures() {
 
   function removeBullet(i: number) {
     set('bullets', data.bullets.filter((_, idx) => idx !== i))
+  }
+
+  // Same auto-calculation as Property Reports: read the floor plan (image
+  // OCR or spreadsheet schedule) and fill in the per-floor and total sq
+  // ft/sq m figures automatically.
+  async function onFloorPlanChosen(file: File | null) {
+    set('floorPlanFile', file)
+    if (!file) return
+    const isImage = file.type.startsWith('image/')
+    const isSpreadsheet = isSpreadsheetFile(file)
+    if (!isImage && !isSpreadsheet) return
+
+    setOcrError('')
+    setOcrRunning(true)
+    try {
+      const ocrText = isImage ? await ocrFloorPlan(file) : ''
+      const schedule = isSpreadsheet ? await extractFloorSchedule(file) : null
+
+      const scheduleSqFt = schedule?.totalSqFt ?? null
+      const scheduleSqM = schedule?.totalSqM ?? null
+      const ocrTotals = extractAreaTotals(ocrText)
+      const sqFt = scheduleSqFt ?? ocrTotals.totalSqFt
+      const sqM = scheduleSqM ?? ocrTotals.totalSqM
+
+      const floors: Record<string, FloorArea> = schedule?.floors ?? {}
+      const knownFloors = new Set(['Ground Floor', 'First Floor', 'Second Floor'])
+      const otherFloors = Object.entries(floors).filter(([label]) => !knownFloors.has(label))
+      const otherSqFt = otherFloors.reduce((sum, [, a]) => (a.sqFt !== null ? sum + a.sqFt : sum), 0)
+      const otherSqM = otherFloors.reduce((sum, [, a]) => (a.sqM !== null ? sum + a.sqM : sum), 0)
+
+      setData(prev => ({
+        ...prev,
+        totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
+        totalSqM: sqM !== null ? String(sqM) : prev.totalSqM,
+        groundFloorSqFt: floors['Ground Floor']?.sqFt != null ? String(floors['Ground Floor'].sqFt) : prev.groundFloorSqFt,
+        groundFloorSqM: floors['Ground Floor']?.sqM != null ? String(floors['Ground Floor'].sqM) : prev.groundFloorSqM,
+        firstFloorSqFt: floors['First Floor']?.sqFt != null ? String(floors['First Floor'].sqFt) : prev.firstFloorSqFt,
+        firstFloorSqM: floors['First Floor']?.sqM != null ? String(floors['First Floor'].sqM) : prev.firstFloorSqM,
+        secondFloorSqFt: floors['Second Floor']?.sqFt != null ? String(floors['Second Floor'].sqFt) : prev.secondFloorSqFt,
+        secondFloorSqM: floors['Second Floor']?.sqM != null ? String(floors['Second Floor'].sqM) : prev.secondFloorSqM,
+        otherFloorSqFt: otherSqFt ? String(otherSqFt) : prev.otherFloorSqFt,
+        otherFloorSqM: otherSqM ? String(otherSqM) : prev.otherFloorSqM,
+      }))
+    } catch (err) {
+      setOcrError(err instanceof Error ? err.message : 'Could not read the floor plan — fill in the areas manually below.')
+    } finally {
+      setOcrRunning(false)
+    }
   }
 
   async function handleGenerateDescriptions() {
@@ -107,44 +160,42 @@ export default function PropertyBrochures() {
           placeholder="Modern Industrial Units"
           hint="Shown under the FOR SALE / TO LET heading."
         />
-        <TextField
-          label="Size"
-          value={data.sqFtText}
-          onChange={v => set('sqFtText', v)}
-          placeholder="632 - 701 SQ FT (59 - 65 SQ M)"
-        />
-        <TextField
-          label={data.disposalType === 'leasehold' ? 'Rent' : 'Price'}
-          value={data.priceOrRent}
-          onChange={v => set('priceOrRent', v)}
-          placeholder={data.disposalType === 'leasehold' ? '£9,086.40 pa' : '£225,000'}
-          hint="Shown in the availability table on the back page."
-        />
       </StepCard>
 
-      <StepCard number={3} title="Attach Files">
+      <StepCard number={3} title="Accommodation">
         <label className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:border-gray-400 font-semibold rounded-md px-4 py-3 cursor-pointer text-sm mb-2">
           <Upload size={18} />
           {data.floorPlanFile ? data.floorPlanFile.name : 'Attach floor plan'}
           <input
             type="file"
-            accept="image/*,.pdf"
+            accept="image/*,.pdf,.xlsx,.xls,.csv"
             className="hidden"
-            onChange={e => set('floorPlanFile', e.target.files?.[0] ?? null)}
+            onChange={e => onFloorPlanChosen(e.target.files?.[0] ?? null)}
           />
         </label>
         <p className="text-xs text-gray-400 mb-3">
-          If it's an image it's embedded straight into the back-page gallery alongside the other photos.
+          Areas below are read automatically from the floor plan (image or spreadsheet), same as Property Reports. If it's an
+          image it's also embedded into the back-page gallery.
         </p>
+        {ocrRunning && (
+          <p className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+            <Loader2 size={14} className="animate-spin" /> Reading the floor plan…
+          </p>
+        )}
+        {ocrError && <p className="text-xs text-amber-700 mb-3">{ocrError}</p>}
 
-        <TextField
-          label="Rateable Value (£)"
-          value={data.rateableValue}
-          onChange={v => set('rateableValue', v)}
-          placeholder="6,200"
-          hint="Read this off the attached RV document. Rates Payable is calculated automatically (RV × 0.432)."
-        />
-        {ratesPayable && <p className="text-sm text-gray-600 -mt-3 mb-4">Rates Payable: {ratesPayable} p.a.</p>}
+        <div className="grid sm:grid-cols-2 gap-x-4">
+          <TextField label="Ground floor (sq ft)" value={data.groundFloorSqFt} onChange={v => set('groundFloorSqFt', v)} />
+          <TextField label="Ground floor (sq m)" value={data.groundFloorSqM} onChange={v => set('groundFloorSqM', v)} />
+          <TextField label="First floor (sq ft)" value={data.firstFloorSqFt} onChange={v => set('firstFloorSqFt', v)} />
+          <TextField label="First floor (sq m)" value={data.firstFloorSqM} onChange={v => set('firstFloorSqM', v)} />
+          <TextField label="Second floor (sq ft)" value={data.secondFloorSqFt} onChange={v => set('secondFloorSqFt', v)} />
+          <TextField label="Second floor (sq m)" value={data.secondFloorSqM} onChange={v => set('secondFloorSqM', v)} />
+          <TextField label="Other (sq ft)" value={data.otherFloorSqFt} onChange={v => set('otherFloorSqFt', v)} />
+          <TextField label="Other (sq m)" value={data.otherFloorSqM} onChange={v => set('otherFloorSqM', v)} />
+          <TextField label="Total (sq ft)" value={data.totalSqFt} onChange={v => set('totalSqFt', v)} />
+          <TextField label="Total (sq m)" value={data.totalSqM} onChange={v => set('totalSqM', v)} />
+        </div>
       </StepCard>
 
       <StepCard number={4} title="Location & Property Descriptions">
@@ -190,7 +241,37 @@ export default function PropertyBrochures() {
         </button>
       </StepCard>
 
-      <StepCard number={6} title="Photos">
+      <StepCard number={6} title="Tenure & Business Rates">
+        {data.disposalType === 'freehold' && (
+          <TextField label="Quoting price (£)" value={data.quotingPrice} onChange={v => set('quotingPrice', v)} placeholder="300,000" />
+        )}
+        {data.disposalType === 'leasehold' && (
+          <TextField label="Quoting rent (£ p.a.)" value={data.quotingRent} onChange={v => set('quotingRent', v)} placeholder="30,000" />
+        )}
+        {data.disposalType === 'lease_assignment' && (
+          <div className="grid sm:grid-cols-2 gap-x-4">
+            <TextField label="Lease term (years)" value={data.leaseTermYears} onChange={v => set('leaseTermYears', v)} placeholder="10" />
+            <TextField label="Lease start date" value={data.leaseStartDate} onChange={v => set('leaseStartDate', v)} placeholder="1st January 2024" />
+            <TextField label="Passing rent (£ p.a.)" value={data.quotingRent} onChange={v => set('quotingRent', v)} placeholder="25,000" />
+            <TextField label="Premium sought (£)" value={data.premium} onChange={v => set('premium', v)} placeholder="20,000" />
+          </div>
+        )}
+        <div className="grid sm:grid-cols-2 gap-x-4 mt-2">
+          <TextField label="Rating list year" value={data.ratingYear} onChange={v => set('ratingYear', v)} />
+          <TextField
+            label="Rateable Value (£)"
+            value={data.rateableValue}
+            onChange={v => set('rateableValue', v)}
+            placeholder="13,500"
+            hint="Read this off the attached RV document."
+          />
+        </div>
+        {ratesPayable !== null && (
+          <p className="text-sm text-gray-600 mt-1">Rates Payable: {formatCurrency(ratesPayable)} p.a. (RV × 0.432)</p>
+        )}
+      </StepCard>
+
+      <StepCard number={7} title="Photos">
         <label className="flex-1 flex items-center justify-center gap-2 bg-my-red hover:bg-my-red-dark text-white font-semibold rounded-md px-4 py-3 cursor-pointer text-sm mb-2">
           <ImageIcon size={18} />
           {data.mainImage ? 'Change main photo' : 'Choose main photo'}
@@ -213,7 +294,7 @@ export default function PropertyBrochures() {
           />
         </label>
         <p className="text-xs text-gray-400 mb-3">
-          These fill the right-hand gallery column on the back page — stacked, bordered, evenly spaced.
+          These run down the right-hand column alongside the text — stacked, bordered, evenly spaced.
         </p>
         {data.galleryImages.length > 0 && (
           <ul className="text-sm text-gray-600 mb-3 list-disc pl-5">

@@ -3,40 +3,68 @@ export type BrochureDisposalType = 'freehold' | 'leasehold' | 'lease_assignment'
 export interface BrochureData {
   disposalType: BrochureDisposalType
   address: string
-  postTown: string
-  postcode: string
-  // Short descriptor shown under the big FOR SALE / TO LET heading, e.g.
-  // "MODERN INDUSTRIAL UNITS" — optional, matches the real templates.
+  // Short descriptor under the big FOR SALE / TO LET heading — the blank
+  // templates just have placeholder text here ("TITLE" / "DESCRIPTION").
   subtitle: string
-  // Free text, e.g. "632 - 701 SQ FT (59 - 65 SQ M)" — kept as one field
-  // since exemplars mix single figures and ranges.
-  sqFtText: string
   bullets: string[]
+
   locationDescription: string
   propertyDescription: string
-  // Rateable Value, read by the user off the attached RV document and
-  // typed in here — Rates Payable is then computed as RV x 0.432.
+
+  // ACCOMMODATION table — one row per floor that has a value, plus TOTAL.
+  groundFloorSqFt: string
+  groundFloorSqM: string
+  firstFloorSqFt: string
+  firstFloorSqM: string
+  secondFloorSqFt: string
+  secondFloorSqM: string
+  otherFloorSqFt: string
+  otherFloorSqM: string
+  totalSqFt: string
+  totalSqM: string
+
+  // TENURE/PRICE, TENURE/RENT or LEASE DETAILS, depending on disposalType.
+  quotingPrice: string // freehold
+  quotingRent: string // leasehold, or the passing rent for a lease assignment
+  leaseTermYears: string // lease_assignment
+  leaseStartDate: string // lease_assignment
+  premium: string // lease_assignment — premium sought for fixtures & fittings
+
+  // BUSINESS RATES — Rates Payable is computed as rateableValue x 0.432.
+  ratingYear: string
   rateableValue: string
-  // Free text for the availability table's price/rent column, e.g.
-  // "£225,000" or "£23,000 per annum exclusive".
-  priceOrRent: string
+
   floorPlanFile: File | null
   mainImage: File | null
   galleryImages: File[]
 }
 
+const currentRatingYear = String(new Date().getFullYear())
+
 export const BLANK_BROCHURE: BrochureData = {
   disposalType: 'freehold',
   address: '',
-  postTown: '',
-  postcode: '',
   subtitle: '',
-  sqFtText: '',
   bullets: [],
   locationDescription: '',
   propertyDescription: '',
+  groundFloorSqFt: '',
+  groundFloorSqM: '',
+  firstFloorSqFt: '',
+  firstFloorSqM: '',
+  secondFloorSqFt: '',
+  secondFloorSqM: '',
+  otherFloorSqFt: '',
+  otherFloorSqM: '',
+  totalSqFt: '',
+  totalSqM: '',
+  quotingPrice: '',
+  quotingRent: '',
+  leaseTermYears: '',
+  leaseStartDate: '',
+  premium: '',
+  ratingYear: currentRatingYear,
   rateableValue: '',
-  priceOrRent: '',
   floorPlanFile: null,
   mainImage: null,
   galleryImages: [],
