@@ -11,8 +11,15 @@ export const LETTERHEAD = {
   // number is "Mason Young JQ Ltd" / 12600246 — different from another
   // real letter (Vittoria Street) which uses "Mason Young Ltd" / 07042724.
   // The exemplar is the one being matched here.
-  regLine:
-    'Mason Young Property Consultants is a trading name of Mason Young JQ Ltd.  Mason Young JQ Ltd is a limited company registered in England & Wales.  Company registration number: 12600246.  Registered office: 6 Warstone Mews, Warstone Lane, Jewellery Quarter, Birmingham, B18 6JB.',
+  //
+  // Pulled directly from the real Crescent Works letter's footer2.xml: the
+  // trading-name text is two SEPARATE single-line paragraphs, not one
+  // wrapped block — part 1 sits at a 0.5in left indent, part 2 at a 1in
+  // left indent (so it visibly starts further right than part 1).
+  regLinePart1:
+    'Mason Young Property Consultants is a trading name of Mason Young JQ Ltd.  Mason Young JQ Ltd is a limited company registered in England & Wales.',
+  regLinePart2:
+    'Company registration number: 12600246.  Registered office: 6 Warstone Mews, Warstone Lane, Jewellery Quarter, Birmingham, B18 6JB.',
 }
 
 export const SIGNATURE = {

@@ -20,6 +20,7 @@ import {
 import { saveAs } from 'file-saver'
 import type { ReportData } from '../components/PropertyReports/types'
 import {
+  LETTERHEAD,
   SIGNATURE,
   RICS_DISCLAIMER,
   LEGAL_FEES,
@@ -46,7 +47,6 @@ import {
 import { MASON_YOUNG_LOGO_BASE64 } from '../assets/logoBase64'
 import { LETTERHEAD_ADDRESS_BLOCK_BASE64 } from '../assets/letterheadAddressBase64'
 import { MASON_YOUNG_FOOTER_BRAND_BASE64 } from '../assets/footerBrandBase64'
-import { FOOTER_REGLINE_BASE64 } from '../assets/footerReglineBase64'
 import { SIGNATURE_BASE64 } from '../assets/signatureBase64'
 
 const FONT = 'Arial'
@@ -392,23 +392,26 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
   bodySections.push(blank(), blank())
   bodySections.push(plainRun('Date ……………………………………………………..'))
 
-  // Plain-paragraph spacing before/after had NO effect on where this text
-  // actually rendered in the footer (verified: identical pixel position
-  // with spacing.before at 0 and at 500 twips) — this renderer pins
-  // footer paragraph text to a fixed position independent of preceding
-  // content. So, like the address block, the trading-name text is
-  // rendered once to a bitmap and floated with an explicit offset,
-  // exactly like the brand-list image next to it — the only mechanism
-  // that's actually controllable here.
+  // Real ground truth pulled directly from the Crescent Works exemplar's
+  // footer2.xml (the "first page" footer, which carries the correct
+  // "Mason Young JQ Ltd" / 12600246 trading-name text): the brand-list
+  // image floats behind the first paragraph, which also carries 11
+  // leading spaces then the part-1 text, indented 720 twips (0.5in) from
+  // the footer's own left margin, fully justified. The part-2 text is a
+  // SEPARATE paragraph indented 1440 twips (1in) — a plain indent, not a
+  // floated raster image — which is what actually renders reliably here;
+  // it was the vertical spacing.before/after on an artificial spacer
+  // paragraph that didn't work, not indentation.
   const footerListImageVerticalOffsetEmu = -633095
   const footerListHeightPt = 73
-  // Measured from the exemplar: the trading-name text starts about 73% of
-  // the way down the 6-item brand list, not top-aligned with it.
-  const footerTextVerticalOffsetEmu = footerListImageVerticalOffsetEmu + Math.round(0.73 * footerListHeightPt * 12700)
+  const footerRegFont = { font: FONT, size: 12 } // 12 half-points = 6pt, matching the real footer2.xml run properties
+  const footerRegColor = '999999'
 
   const footer = new Footer({
     children: [
       new Paragraph({
+        indent: { left: 720 },
+        alignment: AlignmentType.BOTH,
         spacing: { before: 0, after: 0 },
         children: [
           new ImageRun({
@@ -423,20 +426,23 @@ export async function generateReportDocx(d: ReportData): Promise<{ blob: Blob; f
               wrap: { type: TextWrappingType.NONE },
             },
           }),
-          new ImageRun({
-            data: base64ToBytes(FOOTER_REGLINE_BASE64),
-            transformation: { width: 361, height: 24 },
-            type: 'png',
-            floating: {
-              horizontalPosition: { relative: HorizontalPositionRelativeFrom.COLUMN, offset: 1143000 },
-              verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: footerTextVerticalOffsetEmu },
-              allowOverlap: true,
-              behindDocument: true,
-              wrap: { type: TextWrappingType.NONE },
-            },
-          }),
+          new TextRun({ text: '           ', ...footerRegFont, color: footerRegColor }),
+          new TextRun({ text: LETTERHEAD.regLinePart1, ...footerRegFont, color: footerRegColor }),
         ],
       }),
+      new Paragraph({
+        indent: { left: 1440 },
+        alignment: AlignmentType.BOTH,
+        spacing: { before: 0, after: 0 },
+        children: [new TextRun({ text: LETTERHEAD.regLinePart2, ...footerRegFont, color: footerRegColor })],
+      }),
+      // The real footer2.xml has two further EMPTY paragraphs after the
+      // text. LibreOffice bottom-anchors the footer's content block to a
+      // fixed distance from the page edge, so these trailing blank lines
+      // push the two visible text lines further up — without them, our
+      // text renders visibly lower than the real letter's. Matched here
+      // at the same 6pt run size as the real file's paragraph marks.
+      new Paragraph({ spacing: { before: 0, after: 0 }, children: [new TextRun({ text: '', ...footerRegFont })] }),
     ],
   })
 
