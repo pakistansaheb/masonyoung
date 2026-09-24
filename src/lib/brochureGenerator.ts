@@ -25,6 +25,23 @@ function withCommas(value: string): string {
   return Number.isFinite(n) ? n.toLocaleString('en-GB') : value
 }
 
+const SQFT_PER_SQM = 10.7639
+
+// Reports usually only quote one of sq ft / sq m — the other is derived
+// automatically so the ACCOMMODATION table never shows a blank/zero figure
+// when the source data only gave one of the two.
+function deriveSqM(sqFt: string, sqM: string): string {
+  if (sqM.trim()) return sqM
+  const n = Number(sqFt.replace(/,/g, ''))
+  return Number.isFinite(n) && n > 0 ? String(Math.round(n / SQFT_PER_SQM)) : ''
+}
+
+function deriveSqFt(sqFt: string, sqM: string): string {
+  if (sqFt.trim()) return sqFt
+  const n = Number(sqM.replace(/,/g, ''))
+  return Number.isFinite(n) && n > 0 ? String(Math.round(n * SQFT_PER_SQM)) : ''
+}
+
 async function fileDims(file: File): Promise<{ width: number; height: number }> {
   const bitmap = await createImageBitmap(file)
   return { width: bitmap.width, height: bitmap.height }
@@ -43,13 +60,32 @@ const templateUrls: Record<BrochureData['disposalType'], string> = {
 function floorRows(d: BrochureData): { label: string; sqFt: string; sqM: string }[] {
   const rows: { label: string; sqFt: string; sqM: string }[] = []
   const push = (label: string, sqFt: string, sqM: string) => {
-    if (sqFt.trim()) rows.push({ label, sqFt: withCommas(sqFt), sqM: sqM ? withCommas(sqM) : '' })
+    if (!sqFt.trim() && !sqM.trim()) return
+    rows.push({ label, sqFt: withCommas(deriveSqFt(sqFt, sqM)), sqM: withCommas(deriveSqM(sqFt, sqM)) })
   }
   push('Ground Floor', d.groundFloorSqFt, d.groundFloorSqM)
   push('First Floor', d.firstFloorSqFt, d.firstFloorSqM)
   push('Second Floor', d.secondFloorSqFt, d.secondFloorSqM)
   push('Other', d.otherFloorSqFt, d.otherFloorSqM)
   return rows
+}
+
+// The TOTAL is whatever was explicitly given/extracted — but when a report
+// only breaks the area down floor-by-floor with no separate "total" figure,
+// summing the floors automatically beats showing a literal "0".
+function deriveTotalSqFt(d: BrochureData): string {
+  if (d.totalSqFt.trim()) return d.totalSqFt
+  const pairs: [string, string][] = [
+    [d.groundFloorSqFt, d.groundFloorSqM],
+    [d.firstFloorSqFt, d.firstFloorSqM],
+    [d.secondFloorSqFt, d.secondFloorSqM],
+    [d.otherFloorSqFt, d.otherFloorSqM],
+  ]
+  const sum = pairs
+    .map(([sqFt, sqM]) => Number(deriveSqFt(sqFt, sqM) || '0'))
+    .filter(n => Number.isFinite(n) && n > 0)
+    .reduce((a, b) => a + b, 0)
+  return sum > 0 ? String(sum) : ''
 }
 
 // Heading markers deliberately drop the trailing `<` — the real templates
@@ -116,6 +152,28 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   if (!docFile) throw new Error('Template is missing word/document.xml')
   let xml = await docFile.async('string')
 
+  // --- Photos setup (rels needed before the hero photo is anchored below) ---
+  const relsFile = zip.file('word/_rels/document.xml.rels')
+  if (!relsFile) throw new Error('Template is missing word/_rels/document.xml.rels')
+  let relsXml = await relsFile.async('string')
+  let nextRid = nextRelationshipId(relsXml)
+  let docPrId = 900
+  let mediaIndex = 0
+
+  async function embedPhoto(file: File): Promise<{ rId: string; widthPx: number; heightPx: number }> {
+    const dims = await fileDims(file)
+    const ext = extFor(file)
+    const mediaName = `image-brochure-${mediaIndex++}.${ext}`
+    zip.file(`word/media/${mediaName}`, await file.arrayBuffer())
+    const rId = `rId${nextRid++}`
+    const closeTag = '</Relationships>'
+    relsXml =
+      relsXml.slice(0, relsXml.lastIndexOf(closeTag)) +
+      `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/>` +
+      relsXml.slice(relsXml.lastIndexOf(closeTag))
+    return { rId, widthPx: dims.width, heightPx: dims.height }
+  }
+
   // --- Cover: subtitle, address, sq ft line, 4 bullet points. Anything
   // not given is simply left untouched — the template's own placeholder
   // text ("TITLE", "BULLET POINT", "SQ FT (SQ M)") stays visible rather
@@ -123,11 +181,43 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   // data get edited. ---
   const subtitle = d.subtitle.trim()
   const subtitleMarker = d.disposalType === 'freehold' ? '>TITLE<' : '>DESCRIPTION<'
+
+  // Main photo: a hero shot filling the blank gap on the cover, between the
+  // header and the address. Width matches the REAL filled exemplars exactly
+  // (measured directly from Northside Business Centre's own VML shape:
+  // margin-left 77.25pt, width 444pt — inset and centered on the 595.3pt
+  // page, not edge-to-edge). Anchored on the logo image's own paragraph,
+  // which sits in the main document flow — the subtitle marker itself lives
+  // INSIDE the header's floating VML text box, whose coordinate space is
+  // local to that box, not the page, so anchoring there mispositions the
+  // photo. The header text box is a fixed height in every real exemplar
+  // (~175-178pt, regardless of whether the subtitle wraps to one or two
+  // lines), so a fixed offset from the logo's paragraph holds up either way.
+  if (d.mainImage) {
+    const { rId, widthPx, heightPx } = await embedPhoto(d.mainImage)
+    const heroWidthPt = 444
+    const heroWidthEmu = heroWidthPt * PT_TO_EMU
+    const heroHeightEmu = Math.round((heroWidthEmu * heightPx) / widthPx)
+    const heroXPt = (595.3 - heroWidthPt) / 2
+    const run = buildPictureRun({
+      rId,
+      docPrId: docPrId++,
+      xEmu: Math.round(heroXPt * PT_TO_EMU),
+      yEmu: 190 * PT_TO_EMU,
+      widthEmu: heroWidthEmu,
+      heightEmu: heroHeightEmu,
+      border: true,
+    })
+    xml = insertParagraphAfter(xml, 'Mason Young Logo.png', run)
+  }
+
   if (subtitle) {
     xml = replaceParagraphAt(xml, subtitleMarker, subtitle.toUpperCase(), { bold: true, size: 52 })
   }
 
-  const sqFtLine = d.totalSqFt ? `${withCommas(d.totalSqFt)} SQ FT${d.totalSqM ? ` (${withCommas(d.totalSqM)} SQ M)` : ''}` : ''
+  const totalSqFt = deriveTotalSqFt(d)
+  const totalSqM = deriveSqM(totalSqFt, d.totalSqM)
+  const sqFtLine = totalSqFt ? `${withCommas(totalSqFt)} SQ FT${totalSqM ? ` (${withCommas(totalSqM)} SQ M)` : ''}` : ''
   // LFS's placeholder text is fragmented across runs by Word's own
   // spell-check revisions ("S" + "Q FT (SQ M)" as two separate runs) — this
   // marker targets the second, unfragmented run rather than the whole phrase.
@@ -162,57 +252,12 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
     xml = replaceSectionBody(xml, '>DESCRIPTION<', '>ACCOMMODATION<', d.propertyDescription)
   }
   const floors = floorRows(d)
-  if (floors.length || d.totalSqFt.trim()) {
-    xml = rebuildAccommodationTable(xml, floors, { sqFt: withCommas(d.totalSqFt), sqM: withCommas(d.totalSqM) })
+  if (floors.length || totalSqFt) {
+    xml = rebuildAccommodationTable(xml, floors, { sqFt: withCommas(totalSqFt), sqM: withCommas(totalSqM) })
   }
   xml = tenureAndRatesXml(xml, d)
 
-  // --- Photos ---
-  const relsFile = zip.file('word/_rels/document.xml.rels')
-  if (!relsFile) throw new Error('Template is missing word/_rels/document.xml.rels')
-  let relsXml = await relsFile.async('string')
-  let nextRid = nextRelationshipId(relsXml)
-  let docPrId = 900
-  let mediaIndex = 0
-
-  async function embedPhoto(file: File): Promise<{ rId: string; widthPx: number; heightPx: number }> {
-    const dims = await fileDims(file)
-    const ext = extFor(file)
-    const mediaName = `image-brochure-${mediaIndex++}.${ext}`
-    zip.file(`word/media/${mediaName}`, await file.arrayBuffer())
-    const rId = `rId${nextRid++}`
-    const closeTag = '</Relationships>'
-    relsXml =
-      relsXml.slice(0, relsXml.lastIndexOf(closeTag)) +
-      `<Relationship Id="${rId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${mediaName}"/>` +
-      relsXml.slice(relsXml.lastIndexOf(closeTag))
-    return { rId, widthPx: dims.width, heightPx: dims.height }
-  }
-
-  // Main photo: a hero shot filling the blank gap on the cover, between the
-  // header and the address. Sized and positioned to match the REAL filled
-  // exemplars exactly (measured directly from Northside Business Centre's
-  // own VML shape: margin-left 77.25pt, width 444pt — i.e. inset and
-  // centered on the 595.3pt page, not edge-to-edge).
-  if (d.mainImage) {
-    const { rId, widthPx, heightPx } = await embedPhoto(d.mainImage)
-    const heroWidthPt = 444
-    const heroWidthEmu = heroWidthPt * PT_TO_EMU
-    const heroHeightEmu = Math.round((heroWidthEmu * heightPx) / widthPx)
-    const heroXPt = (595.3 - heroWidthPt) / 2
-    const run = buildPictureRun({
-      rId,
-      docPrId: docPrId++,
-      xEmu: Math.round(heroXPt * PT_TO_EMU),
-      // Clears the header block (logo + giant heading + subtitle, which
-      // together run to ~190pt) before the hero photo starts.
-      yEmu: 190 * PT_TO_EMU,
-      widthEmu: heroWidthEmu,
-      heightEmu: heroHeightEmu,
-      border: true,
-    })
-    xml = insertParagraphAfter(xml, 'Mason Young Logo.png', run)
-  }
+  // --- Remaining photos ---
 
   // Gallery photos: run down the right-hand column on page 2, height fixed
   // at 7.55cm, black border, 10pt apart — same spec as the real templates'
