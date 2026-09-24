@@ -37,6 +37,11 @@ export default async function handler(req: IncomingMessage & { url?: string; hea
   const url = new URL(req.url ?? '', 'http://localhost')
   const filename = url.searchParams.get('filename') || 'upload.jpg'
   const contentType = req.headers['content-type'] || 'image/jpeg'
+  // A floor plan drawing has notes written in a side margin, separate from
+  // the room labels scattered across the drawing — worth isolating. A PDF
+  // report is normal flowing text with no such margin, so that heuristic
+  // would wrongly discard most of it; ?mode=report returns everything.
+  const isReport = url.searchParams.get('mode') === 'report'
 
   try {
     const bytes = await readRawBody(req)
@@ -45,6 +50,9 @@ export default async function handler(req: IncomingMessage & { url?: string; hea
     form.append('language', 'eng')
     form.append('OCREngine', '2')
     form.append('isOverlayRequired', 'true')
+    if (contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
+      form.append('filetype', 'PDF')
+    }
     form.append('file', new Blob([new Uint8Array(bytes)], { type: contentType }), filename)
 
     const ocrRes = await fetch('https://api.ocr.space/parse/image', {
@@ -69,7 +77,9 @@ export default async function handler(req: IncomingMessage & { url?: string; hea
       throw new Error(msg || 'OCR.space failed to process the image')
     }
 
-    const text = extractNotesFromOverlay(json.ParsedResults ?? [])
+    const text = isReport
+      ? (json.ParsedResults ?? []).map(r => r.ParsedText).join('\n').trim()
+      : extractNotesFromOverlay(json.ParsedResults ?? [])
 
     send(res, 200, { text })
   } catch (err) {

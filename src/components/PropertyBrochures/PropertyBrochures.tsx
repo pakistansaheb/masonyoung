@@ -46,20 +46,25 @@ export default function PropertyBrochures() {
     set('bullets', data.bullets.filter((_, idx) => idx !== i))
   }
 
-  // Same auto-calculation as Property Reports: read the floor plan (image
-  // OCR or spreadsheet schedule) and fill in the per-floor and total sq
-  // ft/sq m figures automatically.
+  // Same auto-calculation as Property Reports, broadened to also accept a
+  // full report (PDF) rather than only a floor plan drawing: a floor plan
+  // image's notes are read from its side margin (isolating handwritten
+  // notes from the drawing itself), while a PDF report is normal flowing
+  // text read in full and summarised by the AI into the property
+  // description — either way, whatever text comes back also gets scanned
+  // for area figures to auto-fill the ACCOMMODATION table.
   async function onFloorPlanChosen(file: File | null) {
     set('floorPlanFile', file)
     if (!file) return
     const isImage = file.type.startsWith('image/')
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     const isSpreadsheet = isSpreadsheetFile(file)
-    if (!isImage && !isSpreadsheet) return
+    if (!isImage && !isPdf && !isSpreadsheet) return
 
     setOcrError('')
     setOcrRunning(true)
     try {
-      const ocrText = isImage ? await ocrFloorPlan(file) : ''
+      const ocrText = isImage ? await ocrFloorPlan(file) : isPdf ? await ocrFloorPlan(file, 'report') : ''
       const schedule = isSpreadsheet ? await extractFloorSchedule(file) : null
 
       const scheduleSqFt = schedule?.totalSqFt ?? null
@@ -76,6 +81,7 @@ export default function PropertyBrochures() {
 
       setData(prev => ({
         ...prev,
+        floorPlanNotes: ocrText || prev.floorPlanNotes,
         totalSqFt: sqFt !== null ? String(sqFt) : prev.totalSqFt,
         totalSqM: sqM !== null ? String(sqM) : prev.totalSqM,
         groundFloorSqFt: floors['Ground Floor']?.sqFt != null ? String(floors['Ground Floor'].sqFt) : prev.groundFloorSqFt,
@@ -88,7 +94,7 @@ export default function PropertyBrochures() {
         otherFloorSqM: otherSqM ? String(otherSqM) : prev.otherFloorSqM,
       }))
     } catch (err) {
-      setOcrError(err instanceof Error ? err.message : 'Could not read the floor plan — fill in the areas manually below.')
+      setOcrError(err instanceof Error ? err.message : 'Could not read the attachment — fill in the areas and description manually.')
     } finally {
       setOcrRunning(false)
     }
@@ -102,7 +108,7 @@ export default function PropertyBrochures() {
     setAiError('')
     setGenerating(true)
     try {
-      const { location, property } = await generateDescriptions(data.address, '')
+      const { location, property } = await generateDescriptions(data.address, data.floorPlanNotes)
       setData(prev => ({ ...prev, locationDescription: location, propertyDescription: property }))
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Failed to generate descriptions')
@@ -165,7 +171,7 @@ export default function PropertyBrochures() {
       <StepCard number={3} title="Accommodation">
         <label className="flex-1 flex items-center justify-center gap-2 border border-gray-300 hover:border-gray-400 font-semibold rounded-md px-4 py-3 cursor-pointer text-sm mb-2">
           <Upload size={18} />
-          {data.floorPlanFile ? data.floorPlanFile.name : 'Attach floor plan'}
+          {data.floorPlanFile ? data.floorPlanFile.name : 'Attach floor plan or report'}
           <input
             type="file"
             accept="image/*,.pdf,.xlsx,.xls,.csv"
@@ -174,8 +180,9 @@ export default function PropertyBrochures() {
           />
         </label>
         <p className="text-xs text-gray-400 mb-3">
-          Areas below are read automatically from the floor plan (image or spreadsheet), same as Property Reports. If it's an
-          image it's also embedded into the back-page gallery.
+          Doesn't have to be a floor plan — a full report (PDF) works too. Areas below are read automatically (image, PDF or
+          spreadsheet), and its text is summarised into the Property Description in Step 4. If it's an image it's also
+          embedded into the back-page gallery.
         </p>
         {ocrRunning && (
           <p className="flex items-center gap-2 text-xs text-gray-500 mb-3">

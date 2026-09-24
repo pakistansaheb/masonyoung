@@ -1,5 +1,6 @@
-export async function ocrFloorPlan(file: File): Promise<string> {
-  const res = await fetch(`/api/ocr-floorplan?filename=${encodeURIComponent(file.name)}`, {
+export async function ocrFloorPlan(file: File, mode?: 'report'): Promise<string> {
+  const modeParam = mode ? `&mode=${mode}` : ''
+  const res = await fetch(`/api/ocr-floorplan?filename=${encodeURIComponent(file.name)}${modeParam}`, {
     method: 'POST',
     headers: { 'content-type': file.type || 'application/octet-stream' },
     body: file,

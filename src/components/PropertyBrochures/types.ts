@@ -34,6 +34,10 @@ export interface BrochureData {
   ratingYear: string
   rateableValue: string
 
+  // Text read off the attached floor plan/report — a floor plan drawing's
+  // margin notes, or a full report PDF's text. Fed to the AI as the
+  // property description's source material.
+  floorPlanNotes: string
   floorPlanFile: File | null
   mainImage: File | null
   galleryImages: File[]
@@ -65,6 +69,7 @@ export const BLANK_BROCHURE: BrochureData = {
   premium: '',
   ratingYear: currentRatingYear,
   rateableValue: '',
+  floorPlanNotes: '',
   floorPlanFile: null,
   mainImage: null,
   galleryImages: [],
