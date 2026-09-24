@@ -3,6 +3,7 @@ import { Phone, Ruler, FileText, Image, Settings } from 'lucide-react'
 import { MASON_YOUNG_LOGO_BASE64 } from './assets/logoBase64'
 import PropertyReports from './components/PropertyReports/PropertyReports'
 import PropertyBrochures from './components/PropertyBrochures/PropertyBrochures'
+import PasswordGate from './components/PasswordGate'
 
 type Tab = 'enquiries' | 'floorplans' | 'reports' | 'brochures'
 
@@ -28,6 +29,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('reports')
 
   return (
+    <PasswordGate>
     <div className="min-h-screen">
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-3">
@@ -72,5 +74,6 @@ export default function App() {
         Internal tool — not part of the public masonyoung.co.uk website.
       </footer>
     </div>
+    </PasswordGate>
   )
 }
