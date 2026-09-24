@@ -101,15 +101,19 @@ function deriveTotalSqFt(d: BrochureData): string {
 function tenureAndRatesXml(xml: string, d: BrochureData): string {
   if (d.disposalType === 'freehold') {
     if (d.quotingPrice.trim()) {
-      xml = replaceSectionBody(xml, '>TENURE/PRICE', '>BUSINESS RATES', `The freehold interest is available at a quoting price of £${d.quotingPrice} subject to contract.`)
+      xml = tryEdit(xml, 'quoting price', x =>
+        replaceSectionBody(x, '>TENURE/PRICE', '>BUSINESS RATES', `The freehold interest is available at a quoting price of £${d.quotingPrice} subject to contract.`)
+      )
     }
   } else if (d.disposalType === 'leasehold') {
     if (d.quotingRent.trim()) {
-      xml = replaceSectionBody(
-        xml,
-        '>TENURE/RENT',
-        '>BUSINESS RATES',
-        `The property is available on a leasehold basis at a quoting rent of £${d.quotingRent} per annum exclusive, subject to contract. Terms to be agreed.`
+      xml = tryEdit(xml, 'quoting rent', x =>
+        replaceSectionBody(
+          x,
+          '>TENURE/RENT',
+          '>BUSINESS RATES',
+          `The property is available on a leasehold basis at a quoting rent of £${d.quotingRent} per annum exclusive, subject to contract. Terms to be agreed.`
+        )
       )
     }
   } else {
@@ -117,15 +121,19 @@ function tenureAndRatesXml(xml: string, d: BrochureData): string {
     // own TENURE/PRICE) — each depends on its own fields, so each is only
     // edited when it has something to say.
     if (d.leaseTermYears.trim() || d.leaseStartDate.trim() || d.quotingRent.trim()) {
-      xml = replaceSectionBody(
-        xml,
-        '>LEASE DETAILS',
-        '>TENURE/PRICE',
-        `The property is let on a ${d.leaseTermYears || '[XX]'} year lease with effect from ${d.leaseStartDate || '[DATE]'} at a passing rent of £${d.quotingRent || '[RENT]'} per annum.`
+      xml = tryEdit(xml, 'lease details', x =>
+        replaceSectionBody(
+          x,
+          '>LEASE DETAILS',
+          '>TENURE/PRICE',
+          `The property is let on a ${d.leaseTermYears || '[XX]'} year lease with effect from ${d.leaseStartDate || '[DATE]'} at a passing rent of £${d.quotingRent || '[RENT]'} per annum.`
+        )
       )
     }
     if (d.premium.trim()) {
-      xml = replaceSectionBody(xml, '>TENURE/PRICE', '>BUSINESS RATES', `A premium of £${d.premium} is sought in respect of the fixtures and fittings. Stock at value. Further details are available upon request.`)
+      xml = tryEdit(xml, 'premium', x =>
+        replaceSectionBody(x, '>TENURE/PRICE', '>BUSINESS RATES', `A premium of £${d.premium} is sought in respect of the fixtures and fittings. Stock at value. Further details are available upon request.`)
+      )
     }
   }
 
@@ -133,14 +141,30 @@ function tenureAndRatesXml(xml: string, d: BrochureData): string {
     const nextAfterRates = d.disposalType === 'leasehold' ? '>BUILDING INSURANCE' : '>MONEY LAUNDERING'
     const rates = computeRatesPayable(d.rateableValue)
     const ratesText = rates !== null ? formatCurrency(rates) : '[RATES]'
-    xml = replaceSectionBody(
-      xml,
-      '>BUSINESS RATES',
-      nextAfterRates,
-      `The property is currently listed within the ${d.ratingYear} rating listing as having a rateable value of £${d.rateableValue}. Rates payable will be in the region of ${ratesText} per annum. Interested parties are advised to make their own enquiries to Birmingham City Council on 0121 303 5511.`
+    xml = tryEdit(xml, 'business rates', x =>
+      replaceSectionBody(
+        x,
+        '>BUSINESS RATES',
+        nextAfterRates,
+        `The property is currently listed within the ${d.ratingYear} rating listing as having a rateable value of £${d.rateableValue}. Rates payable will be in the region of ${ratesText} per annum. Interested parties are advised to make their own enquiries to Birmingham City Council on 0121 303 5511.`
+      )
     )
   }
   return xml
+}
+
+// Runs one template edit and, if it throws (an unexpected marker mismatch
+// for some template/data combination we haven't hit before), logs it and
+// returns the XML UNCHANGED rather than letting the whole generation abort.
+// A single bad edit should never cost every section below it — the rest of
+// the document (and the download) must still go through.
+function tryEdit(xml: string, label: string, fn: (xml: string) => string): string {
+  try {
+    return fn(xml)
+  } catch (err) {
+    console.error(`Brochure generation: skipped "${label}" —`, err)
+    return xml
+  }
 }
 
 export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blob; filename: string }> {
@@ -208,11 +232,11 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
       heightEmu: heroHeightEmu,
       border: true,
     })
-    xml = insertParagraphAfter(xml, 'Mason Young Logo.png', run)
+    xml = tryEdit(xml, 'main photo', x => insertParagraphAfter(x, 'Mason Young Logo.png', run))
   }
 
   if (subtitle) {
-    xml = replaceParagraphAt(xml, subtitleMarker, subtitle.toUpperCase(), { bold: true, size: 52 })
+    xml = tryEdit(xml, 'subtitle', x => replaceParagraphAt(x, subtitleMarker, subtitle.toUpperCase(), { bold: true, size: 52 }))
   }
 
   const totalSqFt = deriveTotalSqFt(d)
@@ -224,9 +248,11 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   const sqFtMarker = d.disposalType === 'freehold' ? '>SQ FT (<' : d.disposalType === 'leasehold' ? '>SQ FT (SQ M)<' : '>Q FT (SQ M)<'
   // Address first: it's anchored on the sq-ft marker's position, so it has
   // to run before that marker's own paragraph is replaced.
-  xml = replaceParagraphBefore(xml, sqFtMarker, d.address.toUpperCase(), { bold: true, size: 52 })
+  if (d.address.trim()) {
+    xml = tryEdit(xml, 'address', x => replaceParagraphBefore(x, sqFtMarker, d.address.toUpperCase(), { bold: true, size: 52 }))
+  }
   if (sqFtLine) {
-    xml = replaceParagraphAt(xml, sqFtMarker, sqFtLine, { bold: true, color: 'FF0000', size: 48 })
+    xml = tryEdit(xml, 'sq ft line', x => replaceParagraphAt(x, sqFtMarker, sqFtLine, { bold: true, color: 'FF0000', size: 48 }))
   }
 
   const bullets = d.bullets.filter(b => b.trim())
@@ -238,7 +264,7 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   for (let i = 0; i < bullets.length && i < 4; i++) {
     // Always occurrence 0: each replacement consumes one marker instance,
     // so the next bullet to fill is always whatever's left at position 0.
-    xml = replaceParagraphTextKeepPPr(xml, bulletMarker, bullets[i].toUpperCase(), 0)
+    xml = tryEdit(xml, `bullet ${i + 1}`, x => replaceParagraphTextKeepPPr(x, bulletMarker, bullets[i].toUpperCase(), 0))
   }
 
   // --- Body sections: a section with no real content behind it is left
@@ -246,16 +272,16 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   // as shipped. PLANNING/SERVICES/EPC/MONEY LAUNDERING/VAT/LEGAL COSTS/
   // VIEWING/CONTACT DETAILS/the disclaimer are always left alone too. ---
   if (d.locationDescription.trim()) {
-    xml = replaceSectionBody(xml, '>LOCATION<', '>DESCRIPTION<', d.locationDescription)
+    xml = tryEdit(xml, 'location description', x => replaceSectionBody(x, '>LOCATION<', '>DESCRIPTION<', d.locationDescription))
   }
   if (d.propertyDescription.trim()) {
-    xml = replaceSectionBody(xml, '>DESCRIPTION<', '>ACCOMMODATION<', d.propertyDescription)
+    xml = tryEdit(xml, 'property description', x => replaceSectionBody(x, '>DESCRIPTION<', '>ACCOMMODATION<', d.propertyDescription))
   }
   const floors = floorRows(d)
   if (floors.length || totalSqFt) {
-    xml = rebuildAccommodationTable(xml, floors, { sqFt: withCommas(totalSqFt), sqM: withCommas(totalSqM) })
+    xml = tryEdit(xml, 'accommodation table', x => rebuildAccommodationTable(x, floors, { sqFt: withCommas(totalSqFt), sqM: withCommas(totalSqM) }))
   }
-  xml = tenureAndRatesXml(xml, d)
+  xml = tryEdit(xml, 'tenure & rates', x => tenureAndRatesXml(x, d))
 
   // --- Remaining photos ---
 
@@ -275,7 +301,7 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
     yEmu += heightEmu + gapEmu
   }
   if (galleryRuns) {
-    xml = insertParagraphAfter(xml, '>ACCOMMODATION<', galleryRuns)
+    xml = tryEdit(xml, 'gallery photos', x => insertParagraphAfter(x, '>ACCOMMODATION<', galleryRuns))
   }
 
   zip.file('word/_rels/document.xml.rels', relsXml)

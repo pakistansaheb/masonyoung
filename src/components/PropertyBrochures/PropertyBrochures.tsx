@@ -22,6 +22,7 @@ export default function PropertyBrochures() {
   const [generating, setGenerating] = useState(false)
   const [aiError, setAiError] = useState('')
   const [building, setBuilding] = useState(false)
+  const [buildError, setBuildError] = useState('')
   const [ocrRunning, setOcrRunning] = useState(false)
   const [ocrError, setOcrError] = useState('')
 
@@ -140,9 +141,12 @@ export default function PropertyBrochures() {
 
   async function handleDownload() {
     setBuilding(true)
+    setBuildError('')
     try {
       const { blob, filename } = await generateBrochureDocx(data)
       downloadBrochureDocx(blob, filename)
+    } catch (err) {
+      setBuildError(err instanceof Error ? err.message : 'Failed to build the brochure')
     } finally {
       setBuilding(false)
     }
@@ -363,6 +367,7 @@ export default function PropertyBrochures() {
           {building ? <Loader2 size={18} className="animate-spin" /> : <FileDown size={18} />}
           {building ? 'Building brochure…' : 'Download brochure (.docx)'}
         </button>
+        {buildError && <p className="text-sm text-red-600 mt-2">{buildError}</p>}
       </div>
     </div>
   )
