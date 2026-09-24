@@ -112,11 +112,14 @@ export default async function handler(req: IncomingMessage & { body?: unknown },
 
   try {
     const location = await callGroq(LOCATION_SYSTEM, `ADDRESS: ${address}`, apiKey)
-    const property = await callGroq(
-      PROPERTY_SYSTEM,
-      `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes?.trim() || '(no notes provided — use only general, non-specific phrasing and leave fixture details generic)'}`,
-      apiKey
-    )
+
+    // With no floor plan/site notes there is nothing real to describe the
+    // building with — generating one anyway just produces generic invented
+    // filler (a vague "roof", "generic kitchen and WC facilities") that
+    // isn't true of the actual property. Leave it blank instead and let
+    // the notes drive this, same as the location description is driven by
+    // real facts about the address rather than guesses.
+    const property = floorPlanNotes?.trim() ? await callGroq(PROPERTY_SYSTEM, `ADDRESS: ${address}\n\nSurveyor's on-site notes (from the floor plan / site visit):\n${floorPlanNotes.trim()}`, apiKey) : ''
 
     send(res, 200, { location, property })
   } catch (err) {
