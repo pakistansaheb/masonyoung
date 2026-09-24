@@ -58,49 +58,52 @@ function floorRows(d: BrochureData): { label: string; sqFt: string; sqM: string 
 // has trailing spaces in-run, LFS's "TENURE/PRICE" has a trailing period),
 // so requiring an exact `>HEADING<` match silently fails on those. The
 // bare "> + text" prefix is stable everywhere.
+//
+// Each section here only gets edited when its own figures were actually
+// given — with nothing to put in a section, its heading and the
+// template's own example text under it are left exactly as shipped.
 function tenureAndRatesXml(xml: string, d: BrochureData): string {
-  const rates = computeRatesPayable(d.rateableValue)
-  const ratesText = rates !== null ? formatCurrency(rates) : '[RATES]'
-
   if (d.disposalType === 'freehold') {
-    xml = replaceSectionBody(
-      xml,
-      '>TENURE/PRICE',
-      '>BUSINESS RATES',
-      `The freehold interest is available at a quoting price of £${d.quotingPrice || '[PRICE]'} subject to contract.`
-    )
+    if (d.quotingPrice.trim()) {
+      xml = replaceSectionBody(xml, '>TENURE/PRICE', '>BUSINESS RATES', `The freehold interest is available at a quoting price of £${d.quotingPrice} subject to contract.`)
+    }
   } else if (d.disposalType === 'leasehold') {
-    xml = replaceSectionBody(
-      xml,
-      '>TENURE/RENT',
-      '>BUSINESS RATES',
-      `The property is available on a leasehold basis at a quoting rent of £${d.quotingRent || '[RENT]'} per annum exclusive, subject to contract. Terms to be agreed.`
-    )
+    if (d.quotingRent.trim()) {
+      xml = replaceSectionBody(
+        xml,
+        '>TENURE/RENT',
+        '>BUSINESS RATES',
+        `The property is available on a leasehold basis at a quoting rent of £${d.quotingRent} per annum exclusive, subject to contract. Terms to be agreed.`
+      )
+    }
   } else {
     // LFS has TWO separate headed sections here (LEASE DETAILS, then its
-    // own TENURE/PRICE) — both kept, each filled with its own text, rather
-    // than merging them into one and silently deleting the second heading.
-    xml = replaceSectionBody(
-      xml,
-      '>LEASE DETAILS',
-      '>TENURE/PRICE',
-      `The property is let on a ${d.leaseTermYears || '[XX]'} year lease with effect from ${d.leaseStartDate || '[DATE]'} at a passing rent of £${d.quotingRent || '[RENT]'} per annum.`
-    )
-    xml = replaceSectionBody(
-      xml,
-      '>TENURE/PRICE',
-      '>BUSINESS RATES',
-      `A premium of £${d.premium || '[PREMIUM]'} is sought in respect of the fixtures and fittings. Stock at value. Further details are available upon request.`
-    )
+    // own TENURE/PRICE) — each depends on its own fields, so each is only
+    // edited when it has something to say.
+    if (d.leaseTermYears.trim() || d.leaseStartDate.trim() || d.quotingRent.trim()) {
+      xml = replaceSectionBody(
+        xml,
+        '>LEASE DETAILS',
+        '>TENURE/PRICE',
+        `The property is let on a ${d.leaseTermYears || '[XX]'} year lease with effect from ${d.leaseStartDate || '[DATE]'} at a passing rent of £${d.quotingRent || '[RENT]'} per annum.`
+      )
+    }
+    if (d.premium.trim()) {
+      xml = replaceSectionBody(xml, '>TENURE/PRICE', '>BUSINESS RATES', `A premium of £${d.premium} is sought in respect of the fixtures and fittings. Stock at value. Further details are available upon request.`)
+    }
   }
 
-  const nextHeading = d.disposalType === 'leasehold' ? '>BUILDING INSURANCE' : '>MONEY LAUNDERING'
-  xml = replaceSectionBody(
-    xml,
-    '>BUSINESS RATES',
-    nextHeading,
-    `The property is currently listed within the ${d.ratingYear} rating listing as having a rateable value of £${d.rateableValue || '[RV]'}. Rates payable will be in the region of ${ratesText} per annum. Interested parties are advised to make their own enquiries to Birmingham City Council on 0121 303 5511.`
-  )
+  if (d.rateableValue.trim()) {
+    const nextAfterRates = d.disposalType === 'leasehold' ? '>BUILDING INSURANCE' : '>MONEY LAUNDERING'
+    const rates = computeRatesPayable(d.rateableValue)
+    const ratesText = rates !== null ? formatCurrency(rates) : '[RATES]'
+    xml = replaceSectionBody(
+      xml,
+      '>BUSINESS RATES',
+      nextAfterRates,
+      `The property is currently listed within the ${d.ratingYear} rating listing as having a rateable value of £${d.rateableValue}. Rates payable will be in the region of ${ratesText} per annum. Interested parties are advised to make their own enquiries to Birmingham City Council on 0121 303 5511.`
+    )
+  }
   return xml
 }
 
@@ -113,10 +116,14 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
   if (!docFile) throw new Error('Template is missing word/document.xml')
   let xml = await docFile.async('string')
 
-  // --- Cover: subtitle, address, sq ft line, 4 bullet points ---
+  // --- Cover: subtitle, address, sq ft line, 4 bullet points. Anything
+  // not given is simply left untouched — the template's own placeholder
+  // text ("TITLE", "BULLET POINT", "SQ FT (SQ M)") stays visible rather
+  // than being removed or replaced with brackets. Only fields with real
+  // data get edited. ---
   const subtitle = d.subtitle.trim()
+  const subtitleMarker = d.disposalType === 'freehold' ? '>TITLE<' : '>DESCRIPTION<'
   if (subtitle) {
-    const subtitleMarker = d.disposalType === 'freehold' ? '>TITLE<' : '>DESCRIPTION<'
     xml = replaceParagraphAt(xml, subtitleMarker, subtitle.toUpperCase(), { bold: true, size: 52 })
   }
 
@@ -144,13 +151,20 @@ export async function generateBrochureDocx(d: BrochureData): Promise<{ blob: Blo
     xml = replaceParagraphTextKeepPPr(xml, bulletMarker, bullets[i].toUpperCase(), 0)
   }
 
-  // --- Body sections: only the ones with real per-property content change;
-  // PLANNING/SERVICES/EPC/MONEY LAUNDERING/VAT/LEGAL COSTS/VIEWING/CONTACT
-  // DETAILS/the disclaimer are the template's own fixed boilerplate and are
-  // left completely untouched. ---
-  xml = replaceSectionBody(xml, '>LOCATION<', '>DESCRIPTION<', d.locationDescription)
-  xml = replaceSectionBody(xml, '>DESCRIPTION<', '>ACCOMMODATION<', d.propertyDescription)
-  xml = rebuildAccommodationTable(xml, floorRows(d), { sqFt: withCommas(d.totalSqFt), sqM: withCommas(d.totalSqM) })
+  // --- Body sections: a section with no real content behind it is left
+  // completely untouched — the template's own example text stays exactly
+  // as shipped. PLANNING/SERVICES/EPC/MONEY LAUNDERING/VAT/LEGAL COSTS/
+  // VIEWING/CONTACT DETAILS/the disclaimer are always left alone too. ---
+  if (d.locationDescription.trim()) {
+    xml = replaceSectionBody(xml, '>LOCATION<', '>DESCRIPTION<', d.locationDescription)
+  }
+  if (d.propertyDescription.trim()) {
+    xml = replaceSectionBody(xml, '>DESCRIPTION<', '>ACCOMMODATION<', d.propertyDescription)
+  }
+  const floors = floorRows(d)
+  if (floors.length || d.totalSqFt.trim()) {
+    xml = rebuildAccommodationTable(xml, floors, { sqFt: withCommas(d.totalSqFt), sqM: withCommas(d.totalSqM) })
+  }
   xml = tenureAndRatesXml(xml, d)
 
   // --- Photos ---

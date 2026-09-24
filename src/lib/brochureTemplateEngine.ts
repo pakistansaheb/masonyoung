@@ -59,6 +59,26 @@ export function replaceSectionBody(xml: string, afterMarker: string, beforeMarke
   return xml.slice(0, from) + newParas + xml.slice(to)
 }
 
+/**
+ * Removes an ENTIRE section — its heading paragraph included — when there's
+ * no real data to put in it. Used instead of replaceSectionBody whenever
+ * the section's content depends on user input that wasn't given (an empty
+ * LOCATION description, no accommodation figures, no price/rent, no
+ * rateable value): a brochure someone only half-fills in should read like
+ * a shorter, complete document, not show "[PRICE]"-style placeholders or
+ * a heading over a blank paragraph.
+ */
+export function removeSection(xml: string, headingMarker: string, nextHeadingMarker: string): string {
+  const headingIdx = xml.indexOf(headingMarker)
+  if (headingIdx === -1) throw new Error(`removeSection: headingMarker not found: ${headingMarker}`)
+  const nextIdx = xml.indexOf(nextHeadingMarker, headingIdx)
+  if (nextIdx === -1) throw new Error(`removeSection: nextHeadingMarker not found: ${nextHeadingMarker}`)
+
+  const from = paragraphStart(xml, headingIdx)
+  const to = paragraphStart(xml, nextIdx)
+  return xml.slice(0, from) + xml.slice(to)
+}
+
 /** Replaces the single paragraph containing `marker` with new body paragraphs, one per line of `text`. */
 export function replaceParagraphAt(xml: string, marker: string, text: string, opts: { bold?: boolean; color?: string; size?: number } = {}): string {
   const idx = xml.indexOf(marker)
@@ -104,6 +124,15 @@ function nthIndexOf(xml: string, marker: string, n: number): number {
     if (idx === -1) throw new Error(`nthIndexOf: occurrence ${n} of "${marker}" not found`)
   }
   return idx
+}
+
+/** Removes the paragraph containing the FIRST remaining occurrence of `marker` outright (no replacement) — used to drop unused bullet-point placeholders instead of leaving literal "BULLET POINT" text visible. */
+export function removeParagraphAt(xml: string, marker: string): string {
+  const idx = xml.indexOf(marker)
+  if (idx === -1) throw new Error(`removeParagraphAt: marker not found: ${marker}`)
+  const from = paragraphStart(xml, idx)
+  const to = paragraphEnd(xml, idx)
+  return xml.slice(0, from) + xml.slice(to)
 }
 
 /**
