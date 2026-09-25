@@ -7,7 +7,7 @@ import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateBrochureDocx, downloadBrochureDocx } from '../../lib/brochureGenerator'
 import { computeRatesPayable, formatCurrency } from '../../lib/brochureBoilerplate'
 import { ocrFloorPlan } from '../../lib/ocr'
-import { extractAreaTotals } from '../../lib/areaExtract'
+import { extractAreaTotals, extractFloorAreasFromText } from '../../lib/areaExtract'
 import { extractRateableValue } from '../../lib/rateableValueExtract'
 import { isSpreadsheetFile, extractFloorSchedule, type FloorArea } from '../../lib/spreadsheet'
 
@@ -88,7 +88,12 @@ export default function PropertyBrochures() {
         else if (sqFt === null && totals.totalSqFt !== null) sqFt = totals.totalSqFt
         if (schedule?.totalSqM != null) sqM = schedule.totalSqM
         else if (sqM === null && totals.totalSqM !== null) sqM = totals.totalSqM
-        if (schedule?.floors) floors = { ...floors, ...schedule.floors }
+        // Per-floor sub-totals: a spreadsheet's own breakdown is exact and
+        // wins; otherwise fall back to whatever floor labels/figures were
+        // read straight off the OCR'd text (a photographed schedule or RV
+        // notice usually states each floor's area on its own line).
+        const textFloors = ocrText ? extractFloorAreasFromText(ocrText) : {}
+        floors = { ...floors, ...textFloors, ...schedule?.floors }
         const rv = extractRateableValue(ocrText)
         if (rv.rateableValue) rateableValue = rv.rateableValue
         if (rv.ratingYear) ratingYear = rv.ratingYear

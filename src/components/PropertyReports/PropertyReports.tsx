@@ -6,7 +6,7 @@ import { BLANK_REPORT, type ReportData, type DisposalType, type FormLength } fro
 import { generateDescriptions } from '../../lib/aiDescriptions'
 import { generateReportDocx, downloadDocx, openInWordDesktop } from '../../lib/docxGenerator'
 import { ocrFloorPlan } from '../../lib/ocr'
-import { extractAreaTotals } from '../../lib/areaExtract'
+import { extractAreaTotals, extractFloorAreasFromText } from '../../lib/areaExtract'
 import { isSpreadsheetFile, extractFloorSchedule, type FloorArea } from '../../lib/spreadsheet'
 
 const REPORT_TYPE_OPTIONS: {
@@ -150,11 +150,20 @@ export default function PropertyReports() {
       const sqM = scheduleSqM ?? ocrTotals.totalSqM
 
       // Merge each floor's Sub-Total figures across all attached
-      // spreadsheets (first file to report a given floor wins).
+      // spreadsheets AND photographed schedules/notices (a spreadsheet's
+      // own breakdown is exact and takes priority; otherwise whatever
+      // floor labels/figures were read straight off the OCR'd text — a
+      // photo of a floor schedule usually states each floor's area on its
+      // own line). First file to report a given floor wins either way.
       const floors: Record<string, FloorArea> = {}
+      for (const t of ocrTexts) {
+        for (const [label, area] of Object.entries(extractFloorAreasFromText(t))) {
+          if (!floors[label]) floors[label] = area
+        }
+      }
       for (const s of schedules) {
         for (const [label, area] of Object.entries(s.floors)) {
-          if (!floors[label]) floors[label] = area
+          floors[label] = area
         }
       }
       const knownFloors = new Set(['Ground Floor', 'First Floor', 'Second Floor'])
